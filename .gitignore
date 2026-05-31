@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+.venv/
+venv/
+env/
+
+.DS_Store
+
+# Temporary parser/debug outputs. Curated datasets may still be committed.
+data/debug_*.csv
+data/house_price_index_sample_history.csv
