@@ -5,10 +5,10 @@
 This repository contains a Python scraper and Streamlit dashboard for the National Bureau of Statistics 70-city housing price index.
 
 - `scripts/fetch_stats.py`: CLI scraper, search API discovery, HTML parser, and CSV/JSON exporter.
-- `app.py`: Streamlit dashboard. It prefers `data/house_price_index_all.csv` and falls back to `data/house_price_index.csv`. The UI defaults to `二手住宅`, includes ranking, distribution, tier comparison, and price trend views, and links the current filter title to the source page through an icon.
+- `app.py`: Streamlit dashboard. It prefers `data/house_price_index_all.csv.gz`, falls back to `data/house_price_index_all.csv`, then `data/house_price_index.csv`. The UI defaults to `二手住宅`, includes ranking, distribution, tier comparison, and price trend views, and links the current filter title to the source page through an icon.
 - `.streamlit/config.toml`: Streamlit viewer toolbar configuration.
 - `assets/favicon.ico`: dashboard favicon asset.
-- `data/`: committed app data. The GitHub-oriented `main` branch keeps only `house_price_index_all.csv`, which is the file the dashboard reads at runtime.
+- `data/`: committed app data. The GitHub-oriented `main` branch keeps only `house_price_index_all.csv.gz`, which is the compressed CSV the dashboard reads at runtime.
 - `requirements.txt`: runtime dependencies.
 - `README.md`: user setup, scraping, and visualization instructions.
 
@@ -29,7 +29,18 @@ Fetch all discovered history:
 ```bash
 python3 scripts/fetch_stats.py --all-history \
   --out data/house_price_index_all.csv
+gzip -n -9 -f data/house_price_index_all.csv
 ```
+
+Incrementally update future months:
+
+```bash
+python3 scripts/fetch_stats.py --incremental \
+  --existing data/house_price_index_all.csv.gz \
+  --out data/house_price_index_all.csv.gz
+```
+
+Incremental mode only fetches periods newer than the current max `period`. Months not present in the NBS search API are recorded in `data/house_price_index_missing.json` instead of probing guessed URLs.
 
 Run the dashboard:
 
@@ -59,7 +70,7 @@ Keep generated files under `data/`; do not hard-code local paths or credentials.
 
 ## Testing Guidelines
 
-No automated suite is configured. For parser edits, run `py_compile`, fetch one modern page, and test at least one historical migration page. Modern complete months should produce `1,680` records, except January months, which produce `1,120` records because they lack cumulative-average columns. Older pages may legitimately contain only partial tables; check coverage by grouping `data/house_price_index_all.csv` by `period` and `table_no`.
+No automated suite is configured. For parser edits, run `py_compile`, fetch one modern page, and test at least one historical migration page. Modern complete months should produce `1,680` records, except January months, which produce `1,120` records because they lack cumulative-average columns. Older pages may legitimately contain only partial tables; check coverage by grouping `data/house_price_index_all.csv.gz` by `period` and `table_no`.
 
 If adding tests, use `tests/test_*.py` and include fixtures for split city names, January two-metric tables, and missing historical tables.
 

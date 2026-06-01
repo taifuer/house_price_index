@@ -9,7 +9,9 @@ import plotly.graph_objects as go
 import streamlit as st
 
 
-DATA_PATH = Path("data/house_price_index_all.csv")
+DATA_PATH = Path("data/house_price_index_all.csv.gz")
+if not DATA_PATH.exists():
+    DATA_PATH = Path("data/house_price_index_all.csv")
 if not DATA_PATH.exists():
     DATA_PATH = Path("data/house_price_index.csv")
 FAVICON_PATH = Path("assets/favicon.ico")

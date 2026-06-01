@@ -17,7 +17,7 @@
 ├── assets/favicon.ico                      # 房屋 favicon
 ├── scripts/fetch_stats.py                  # 数据获取、解析、导出 CLI
 ├── data/
-│   └── house_price_index_all.csv           # 全历史长表数据
+│   └── house_price_index_all.csv.gz        # 全历史长表数据（gzip 压缩 CSV）
 ├── requirements.txt
 └── AGENTS.md
 ```
@@ -38,6 +38,16 @@ pip install -r requirements.txt
 python3 scripts/fetch_stats.py \
   --all-history \
   --out data/house_price_index_all.csv
+gzip -n -9 -f data/house_price_index_all.csv
+```
+
+日常更新建议使用增量模式。脚本会读取现有数据，只抓取当前最大月份之后、已经出现在国家统计局搜索 API 中的新月份；暂未发布的月份会记录到 `data/house_price_index_missing.json`，不会尝试猜测或反复抓取不存在的详情页：
+
+```bash
+python3 scripts/fetch_stats.py \
+  --incremental \
+  --existing data/house_price_index_all.csv.gz \
+  --out data/house_price_index_all.csv.gz
 ```
 
 获取单个详情页：
@@ -63,7 +73,13 @@ python3 scripts/fetch_stats.py \
 streamlit run app.py
 ```
 
-`app.py` 会优先读取 `data/house_price_index_all.csv`。
+应用会优先读取压缩后的全历史数据：
+
+```bash
+data/house_price_index_all.csv.gz
+```
+
+如果只存在未压缩 CSV，也可以继续运行；应用会自动回退读取 `data/house_price_index_all.csv` 或 `data/house_price_index.csv`。
 
 如果端口被占用，可以换端口：
 
@@ -91,7 +107,7 @@ streamlit run app.py --server.port 8502 --server.address 0.0.0.0
 - `158` 个有数据月份
 - 时间范围：`2011-02` 至 `2026-04`
 
-注意：早期历史页面和现代页面的表格结构不同。2011-2018 年部分月份只发布表 1/2，或国家统计局迁移索引中存在失效链接，因此不是所有月份都有现代格式的表 1-4 完整记录。可按 `period`、`table_no` 和 `source_url` 聚合 `data/house_price_index_all.csv` 查看每个月的记录数、表号覆盖和来源 URL。
+注意：早期历史页面和现代页面的表格结构不同。2011-2018 年部分月份只发布表 1/2，或国家统计局迁移索引中存在失效链接，因此不是所有月份都有现代格式的表 1-4 完整记录。可按 `period`、`table_no` 和 `source_url` 聚合 `data/house_price_index_all.csv.gz` 查看每个月的记录数、表号覆盖和来源 URL。
 
 ## 输出字段
 

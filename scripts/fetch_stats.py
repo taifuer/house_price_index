@@ -5,12 +5,15 @@ from __future__ import annotations
 
 import argparse
 import csv
+import gzip
 import html
+import io
 import json
 import re
 import sys
 import time
 from dataclasses import dataclass
+from datetime import date, datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urljoin
@@ -106,6 +109,30 @@ DETAIL_URL_RE = re.compile(
 )
 HOUSING_TITLE_RE = re.compile(r"^(\d{4})年\s*(\d{1,2})月份70个大中城市(?:商品)?住宅销售价格变动情况$")
 SEARCH_API_URL = "https://api.so-gov.cn/query/s"
+DEFAULT_OUTPUT_PATH = "data/house_price_index.csv"
+DEFAULT_INCREMENTAL_PATHS = [
+    Path("data/house_price_index_all.csv.gz"),
+    Path("data/house_price_index_all.csv"),
+    Path("data/house_price_index.csv"),
+]
+DEFAULT_MISSING_LOG_PATH = Path("data/house_price_index_missing.json")
+FIELDNAMES = [
+    "period",
+    "table_no",
+    "table_name",
+    "house_type",
+    "size_band",
+    "city",
+    "metric",
+    "base",
+    "value",
+    "change_pct",
+    "source_url",
+    "title",
+]
+RECORD_KEY_FIELDS = ("period", "table_no", "house_type", "size_band", "city", "metric")
+SIZE_BAND_ORDER = ["全部", "90m2及以下", "90-144m2", "144m2以上"]
+METRIC_ORDER = ["环比", "同比", "累计平均"]
 
 
 @dataclass
@@ -641,24 +668,30 @@ def expected_record_count(period: str) -> int:
     return 1120 if period.endswith("-01") else 1680
 
 
+def csv_text_reader(path: Path):
+    if path.suffix == ".gz":
+        return gzip.open(path, "rt", newline="", encoding="utf-8-sig")
+    return path.open("r", newline="", encoding="utf-8-sig")
+
+
+def csv_text_writer(path: Path):
+    if path.suffix == ".gz":
+        raw_file = path.open("wb")
+        gzip_file = gzip.GzipFile(fileobj=raw_file, mode="wb", mtime=0)
+        text_file = io.TextIOWrapper(gzip_file, encoding="utf-8-sig", newline="")
+        return text_file
+    return path.open("w", newline="", encoding="utf-8-sig")
+
+
+def read_csv(path: Path) -> list[dict]:
+    with csv_text_reader(path) as file:
+        return list(csv.DictReader(file))
+
+
 def write_csv(records: list[dict], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = [
-        "period",
-        "table_no",
-        "table_name",
-        "house_type",
-        "size_band",
-        "city",
-        "metric",
-        "base",
-        "value",
-        "change_pct",
-        "source_url",
-        "title",
-    ]
-    with output_path.open("w", newline="", encoding="utf-8-sig") as file:
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
+    with csv_text_writer(output_path) as file:
+        writer = csv.DictWriter(file, fieldnames=FIELDNAMES)
         writer.writeheader()
         writer.writerows(records)
 
@@ -713,14 +746,157 @@ def fetch_history_candidates(
     return all_records, all_warnings
 
 
+def resolve_existing_path(args: argparse.Namespace) -> Path:
+    if args.existing:
+        path = Path(args.existing)
+        if not path.exists():
+            raise FileNotFoundError(f"现有数据文件不存在：{path}")
+        return path
+    if args.out and Path(args.out).exists():
+        return Path(args.out)
+    for path in DEFAULT_INCREMENTAL_PATHS:
+        if path.exists():
+            return path
+    raise FileNotFoundError("未找到现有数据文件，请通过 --existing 指定")
+
+
+def previous_month(today: date) -> str:
+    year = today.year
+    month = today.month - 1
+    if month == 0:
+        year -= 1
+        month = 12
+    return f"{year:04d}-{month:02d}"
+
+
+def iter_months(start_exclusive: str, end_inclusive: str) -> list[str]:
+    start_year, start_month = (int(part) for part in start_exclusive.split("-", 1))
+    end_year, end_month = (int(part) for part in end_inclusive.split("-", 1))
+    months: list[str] = []
+    year, month = start_year, start_month + 1
+    while (year, month) <= (end_year, end_month):
+        months.append(f"{year:04d}-{month:02d}")
+        month += 1
+        if month == 13:
+            year += 1
+            month = 1
+    return months
+
+
+def record_key(record: dict) -> tuple[str, ...]:
+    return tuple(str(record.get(field, "")) for field in RECORD_KEY_FIELDS)
+
+
+def sort_records(records: list[dict]) -> list[dict]:
+    city_order = {city: index for index, city in enumerate(CITY_NAMES)}
+    size_order = {size: index for index, size in enumerate(SIZE_BAND_ORDER)}
+    metric_order = {metric: index for index, metric in enumerate(METRIC_ORDER)}
+
+    def sort_key(record: dict) -> tuple:
+        table_no = int(record.get("table_no") or 0)
+        period = str(record.get("period", "0000-00"))
+        period_rank = -(int(period[:4]) * 100 + int(period[5:7])) if re.match(r"^\d{4}-\d{2}$", period) else 0
+        return (
+            period_rank,
+            table_no,
+            str(record.get("house_type", "")),
+            size_order.get(str(record.get("size_band", "")), 99),
+            city_order.get(str(record.get("city", "")), 999),
+            metric_order.get(str(record.get("metric", "")), 99),
+        )
+
+    return sorted(records, key=sort_key)
+
+
+def merge_records(existing_records: list[dict], new_records: list[dict]) -> list[dict]:
+    merged = {record_key(record): record for record in existing_records}
+    for record in new_records:
+        merged[record_key(record)] = record
+    return sort_records(list(merged.values()))
+
+
+def write_missing_log(
+    *,
+    output_path: Path,
+    existing_path: Path,
+    max_existing_period: str,
+    candidate_periods: set[str],
+    missing_periods: list[str],
+    fetched_periods: list[str],
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "existing_path": str(existing_path),
+        "max_existing_period": max_existing_period,
+        "search_candidate_period_count": len(candidate_periods),
+        "fetched_periods": fetched_periods,
+        "missing_periods": [
+            {
+                "period": period,
+                "status": "not_in_search_results",
+                "reason": "No candidate was found in the NBS search API; no detail page was fetched.",
+            }
+            for period in missing_periods
+        ],
+    }
+    output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def run_incremental(args: argparse.Namespace) -> tuple[list[dict], list[str], Path]:
+    queries = list(dict.fromkeys([args.search_query, "大中城市住宅销售价格变动情况"]))
+    candidates = discover_candidates_from_search_api(queries, max_pages=args.max_search_pages)
+    existing_path = resolve_existing_path(args)
+    existing_records = read_csv(existing_path)
+    if not existing_records:
+        raise RuntimeError(f"现有数据文件为空：{existing_path}")
+
+    existing_periods = {str(record["period"]) for record in existing_records if record.get("period")}
+    max_existing_period = max(existing_periods)
+    target_periods = sorted((period for period in candidates if period > max_existing_period), reverse=True)
+    target_candidates = {period: candidates[period] for period in target_periods}
+
+    candidate_periods = set(candidates)
+    expected_periods = iter_months(max_existing_period, previous_month(date.today()))
+    missing_periods = [period for period in expected_periods if period not in candidate_periods]
+
+    if target_candidates:
+        print(f"增量发现 {len(target_candidates)} 个新月份：{', '.join(sorted(target_candidates))}")
+        new_records, warnings = fetch_history_candidates(target_candidates, args)
+    else:
+        print(f"未发现 {max_existing_period} 之后的新月份")
+        new_records, warnings = [], []
+
+    output_path = Path(args.out) if args.out else existing_path
+    merged_records = merge_records(existing_records, new_records)
+    write_missing_log(
+        output_path=Path(args.missing_log),
+        existing_path=existing_path,
+        max_existing_period=max_existing_period,
+        candidate_periods=candidate_periods,
+        missing_periods=missing_periods,
+        fetched_periods=sorted(target_candidates),
+    )
+    if missing_periods:
+        print(f"记录统计局尚未发布月份：{', '.join(missing_periods)}")
+    return merged_records, warnings, output_path
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", action="append", help="国家统计局详情页 URL，可重复传入")
     parser.add_argument("--search-url", help="国家统计局搜索页 URL，用于自动发现详情页")
     parser.add_argument("--all-history", action="store_true", help="通过国家统计局搜索 API 发现并抓取全部历史月份")
+    parser.add_argument("--incremental", action="store_true", help="基于现有 CSV 只抓取最新新增月份")
+    parser.add_argument("--existing", help="增量模式读取的现有 CSV 或 CSV.GZ 路径，默认自动查找")
+    parser.add_argument(
+        "--missing-log",
+        default=str(DEFAULT_MISSING_LOG_PATH),
+        help="增量模式记录统计局尚未发布月份的 JSON 路径",
+    )
     parser.add_argument("--search-query", default="大中城市商品住宅销售价格变动情况", help="搜索 API 查询词")
     parser.add_argument("--max-search-pages", type=int, help="限制搜索 API 分页数，调试时使用")
-    parser.add_argument("--out", default="data/house_price_index.csv", help="输出 CSV 路径")
+    parser.add_argument("--out", help=f"输出 CSV 或 CSV.GZ 路径，默认 {DEFAULT_OUTPUT_PATH}")
     parser.add_argument("--json-out", help="可选 JSON 输出路径")
     return parser.parse_args(argv)
 
@@ -731,10 +907,18 @@ def main(argv: list[str] | None = None) -> int:
     all_records: list[dict] = []
     all_warnings: list[str] = []
 
-    if args.all_history:
+    if args.incremental and (args.all_history or args.url or args.search_url):
+        raise RuntimeError("--incremental 不能与 --all-history、--url 或 --search-url 同时使用")
+
+    if args.incremental:
+        all_records, all_warnings, output_path = run_incremental(args)
+    elif args.all_history:
         queries = list(dict.fromkeys([args.search_query, "大中城市住宅销售价格变动情况"]))
         candidates = discover_candidates_from_search_api(queries, max_pages=args.max_search_pages)
         all_records, all_warnings = fetch_history_candidates(candidates, args)
+        output_path = Path(args.out or DEFAULT_OUTPUT_PATH)
+    else:
+        output_path = Path(args.out or DEFAULT_OUTPUT_PATH)
 
     if args.search_url:
         search_html = fetch_text(args.search_url)
@@ -750,7 +934,9 @@ def main(argv: list[str] | None = None) -> int:
         urls.extend(discovered)
         print(f"搜索页发现 {len(discovered)} 个详情页")
 
-    if not urls and all_records:
+    if args.incremental:
+        pass
+    elif not urls and all_records:
         pass
     elif not urls and not (args.search_url or args.all_history):
         urls = [DEFAULT_DETAIL_URL]
@@ -776,7 +962,6 @@ def main(argv: list[str] | None = None) -> int:
     if not all_records:
         raise RuntimeError("没有解析到任何记录")
 
-    output_path = Path(args.out)
     write_csv(all_records, output_path)
     if args.json_out:
         write_json(all_records, Path(args.json_out))
