@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import inspect
 from pathlib import Path
 
 import pandas as pd
@@ -14,18 +15,27 @@ if not DATA_PATH.exists():
     DATA_PATH = Path("data/house_price_index_all.csv")
 if not DATA_PATH.exists():
     DATA_PATH = Path("data/house_price_index.csv")
+INTERNATIONAL_CONTEXT_PATH = Path("data/context_bis_prices.csv.gz")
 FAVICON_PATH = Path("assets/favicon.ico")
 
 st.set_page_config(
-    page_title="70 城商品住宅价格指数",
+    page_title="全国 70 城商品住宅价格指数",
     page_icon=FAVICON_PATH if FAVICON_PATH.exists() else "🏠",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 SIZE_BAND_ORDER = ["全部", "90m2及以下", "90-144m2", "144m2以上"]
 METRIC_ORDER = ["环比", "同比", "累计平均"]
 RANK_TIER_OPTIONS = ["全部", "一线", "二线", "三线"]
+COUNTRY_COLOR_MAP = {
+    "中国": "#d92d20",
+    "美国": "#2563eb",
+    "日本": "#12b76a",
+    "韩国": "#7f56d9",
+    "英国": "#f79009",
+    "德国": "#475467",
+}
 # 国家统计局 70 个大中城市一二三线城市划分口径。
 TIER_MAP = {
     "北京": "一线",
@@ -111,6 +121,13 @@ def load_data(path: Path) -> pd.DataFrame:
     return df.dropna(subset=["value"])
 
 
+@st.cache_data
+def load_optional_csv(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        return pd.DataFrame()
+    return pd.read_csv(path)
+
+
 def ordered_values(values: pd.Series, preferred_order: list[str]) -> list[str]:
     existing = set(values.dropna().astype(str))
     ordered = [value for value in preferred_order if value in existing]
@@ -143,8 +160,51 @@ def period_year_ticks(periods: list[str] | pd.Series) -> tuple[list[str], list[s
     return tickvals, ticktext
 
 
+def summarize_period_ranges(periods: list[str]) -> str:
+    ordered = sorted(pd.Series(periods).dropna().astype(str).unique())
+    if not ordered:
+        return ""
+
+    ranges: list[tuple[pd.Period, pd.Period]] = []
+    range_start = pd.Period(ordered[0], freq="M")
+    previous = range_start
+    for item in ordered[1:]:
+        current = pd.Period(item, freq="M")
+        if current == previous + 1:
+            previous = current
+            continue
+        ranges.append((range_start, previous))
+        range_start = current
+        previous = current
+    ranges.append((range_start, previous))
+
+    def format_range(start: pd.Period, end: pd.Period) -> str:
+        if start == end:
+            return format_period_label(str(start))
+        return f"{format_period_label(str(start))} 至 {format_period_label(str(end))}"
+
+    range_labels = [format_range(start, end) for start, end in ranges]
+    if len(range_labels) > 3:
+        return "、".join(range_labels[:3]) + " 等"
+    return "、".join(range_labels)
+
+
+def missing_period_note(periods: list[str], label: str) -> str:
+    count = len(set(periods))
+    if count == 0:
+        return ""
+    return f"* {count} 个月份{label}：{summarize_period_ranges(periods)}"
+
+
 def css_content(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def render_plotly_chart(fig: go.Figure) -> None:
+    if "width" in inspect.signature(st.plotly_chart).parameters:
+        st.plotly_chart(fig, width="stretch")
+    else:
+        st.plotly_chart(fig, use_container_width=True)
 
 
 if not DATA_PATH.exists():
@@ -152,6 +212,7 @@ if not DATA_PATH.exists():
     st.stop()
 
 data = load_data(DATA_PATH)
+international_context = load_optional_csv(INTERNATIONAL_CONTEXT_PATH)
 
 periods = sorted(data["period"].unique(), reverse=True)
 house_types = ordered_values(data["house_type"], ["新建商品住宅", "二手住宅"])
@@ -170,6 +231,19 @@ with st.sidebar:
     metrics = ordered_values(scoped["metric"], METRIC_ORDER)
     metric = st.selectbox("指标", metrics)
 
+    st.divider()
+    with st.expander("数据范围"):
+        st.caption(f"70 城：{format_period_label(data['period'].min())} 至 {format_period_label(data['period'].max())}")
+        if not international_context.empty:
+            st.caption(
+                f"BIS：{international_context['period'].min()} 至 {international_context['period'].max()}"
+            )
+    with st.expander("指标说明"):
+        st.caption("环比：上月=100")
+        st.caption("同比：上年同月=100")
+        st.caption("累计平均：上年同期=100")
+        st.caption("图中变动值 = 指数 - 100")
+
 filtered = data[
     (data["period"] == period)
     & (data["house_type"] == house_type)
@@ -181,7 +255,7 @@ if filtered.empty:
     st.warning("当前筛选条件没有数据。")
     st.stop()
 
-header_title = "70 城商品住宅价格指数"
+header_title = "全国 70 城商品住宅价格指数"
 source = filtered["source_url"].dropna().iloc[0]
 view_title = f"{format_period_label(period)} · {house_type} · {size_band} · {metric}"
 st.markdown(
@@ -248,6 +322,19 @@ st.markdown(
         letter-spacing: 0;
         line-height: 1.3;
         margin: 0 0 1rem;
+    }}
+
+    .chart-title {{
+        color: #111827;
+        font-size: 1.05rem;
+        font-weight: 700;
+        line-height: 1.3;
+        margin: 1.35rem 0 0.35rem;
+    }}
+
+    .chart-title.compact {{
+        font-size: 0.98rem;
+        margin: 0.45rem 0 0.35rem;
     }}
 
     .source-link,
@@ -377,7 +464,6 @@ def rank_button_args(selected_tier: str) -> list[dict[str, object]]:
             "marker.color": [rank_bar_colors(view)],
         },
         {
-            "title.text": f"<b>城市排名（{selected_tier}）</b>",
             "xaxis.tickvals": view["display_rank"].tolist(),
             "xaxis.ticktext": view["city"].tolist(),
             "xaxis.range": [view["display_rank"].min() - 0.5, view["display_rank"].max() + 0.5],
@@ -387,6 +473,7 @@ def rank_button_args(selected_tier: str) -> list[dict[str, object]]:
 
 rank_view = build_rank_view("全部")
 
+st.markdown('<div class="chart-title">城市排名</div>', unsafe_allow_html=True)
 fig = go.Figure()
 fig.add_bar(
     x=rank_view["display_rank"],
@@ -409,7 +496,6 @@ fig.add_bar(
 )
 fig.add_hline(y=0, line_color="#666", line_width=1)
 fig.update_layout(
-    title="<b>城市排名（全部）</b>",
     height=580,
     xaxis={
         "title": "城市",
@@ -420,7 +506,7 @@ fig.update_layout(
         "showgrid": False,
     },
     yaxis={"zeroline": True},
-    margin={"l": 55, "r": 25, "t": 95, "b": 125},
+    margin={"l": 55, "r": 25, "t": 70, "b": 125},
     updatemenus=[
         {
             "type": "buttons",
@@ -443,11 +529,12 @@ fig.update_layout(
     showlegend=False,
 )
 fig.update_xaxes(tickangle=-35)
-st.plotly_chart(fig, width="stretch")
+render_plotly_chart(fig)
 
 extreme_col, dist_col, tier_col = st.columns([1, 1, 1])
 
 with extreme_col:
+    st.markdown('<div class="chart-title compact">首尾城市对比</div>', unsafe_allow_html=True)
     extremes = pd.concat([filtered.head(5), filtered.tail(5)]).drop_duplicates(subset=["city"])
     fig = px.bar(
         extremes.sort_values("change_pct"),
@@ -457,15 +544,15 @@ with extreme_col:
         color_continuous_scale="RdBu_r",
         orientation="h",
         text=extremes.sort_values("change_pct")["change_pct"].map(format_pct),
-        title="首尾城市对比",
         labels={"change_pct": "较基期变动", "city": "城市"},
     )
     fig.add_vline(x=0, line_color="#666", line_width=1)
     fig.update_traces(textposition="outside", cliponaxis=False)
-    fig.update_layout(height=390, margin={"l": 70, "r": 20, "t": 70, "b": 45}, coloraxis_showscale=False)
-    st.plotly_chart(fig, width="stretch")
+    fig.update_layout(height=390, margin={"l": 70, "r": 20, "t": 35, "b": 45}, coloraxis_showscale=False)
+    render_plotly_chart(fig)
 
 with dist_col:
+    st.markdown('<div class="chart-title compact">城市涨跌分布</div>', unsafe_allow_html=True)
     binned = pd.cut(filtered["change_pct"], bins=18, include_lowest=True)
     dist = (
         binned.value_counts(sort=False)
@@ -518,9 +605,8 @@ with dist_col:
         tick_labels.insert(1, "0")
 
     fig.update_layout(
-        title="城市涨跌分布",
         height=380,
-        margin={"l": 55, "r": 20, "t": 70, "b": 50},
+        margin={"l": 55, "r": 20, "t": 35, "b": 50},
         xaxis={
             "title": "较基期变动",
             "tickmode": "array",
@@ -533,9 +619,10 @@ with dist_col:
         bargroupgap=0,
         showlegend=False,
     )
-    st.plotly_chart(fig, width="stretch")
+    render_plotly_chart(fig)
 
 with tier_col:
+    st.markdown('<div class="chart-title compact">城市层级对比</div>', unsafe_allow_html=True)
     tier_summary = (
         filtered.groupby("city_tier", as_index=False)
         .agg(
@@ -606,9 +693,8 @@ with tier_col:
     tier_axis_limit = max(abs(tier_summary["min_change"].min()), abs(tier_summary["max_change"].max()), 0.1)
     fig.add_vline(x=0, line_color="#666", line_width=1)
     fig.update_layout(
-        title="城市层级对比",
         height=420,
-        margin={"l": 65, "r": 25, "t": 70, "b": 50},
+        margin={"l": 65, "r": 25, "t": 35, "b": 50},
         xaxis={"title": "较基期变动", "range": [-tier_axis_limit * 1.15, tier_axis_limit * 1.15]},
         yaxis={
             "title": "",
@@ -619,7 +705,7 @@ with tier_col:
         },
         showlegend=False,
     )
-    st.plotly_chart(fig, width="stretch")
+    render_plotly_chart(fig)
 
 st.markdown("#### 价格趋势")
 overall_trend = data[
@@ -629,6 +715,7 @@ overall_trend = data[
 ].copy()
 
 if not overall_trend.empty:
+    st.markdown('<div class="chart-title">整体趋势</div>', unsafe_allow_html=True)
     month_index = pd.period_range(overall_trend["period"].min(), overall_trend["period"].max(), freq="M").astype(str)
     monthly = overall_trend.groupby("period").agg(
         covered=("city", "nunique"),
@@ -645,7 +732,7 @@ if not overall_trend.empty:
     monthly["data_status"] = monthly["covered_display"].map(
         lambda count: "数据完整" if count == expected_city_count else "数据不完整"
     )
-    has_missing_overall_data = bool((monthly["covered_display"] < expected_city_count).any())
+    incomplete_overall_periods = monthly.loc[monthly["covered_display"] < expected_city_count, "period"].tolist()
     overall_customdata = monthly[
         ["up_display", "flat_display", "down_display", "covered_display", "data_status"]
     ].values.tolist()
@@ -690,8 +777,7 @@ if not overall_trend.empty:
         barmode="relative",
         height=460,
         legend={"orientation": "h", "y": 1.08, "x": 0},
-        margin={"l": 55, "r": 20, "t": 70, "b": 72},
-        title="整体趋势",
+        margin={"l": 55, "r": 20, "t": 45, "b": 72},
         xaxis={"title": "年份", "tickmode": "array", "tickvals": year_tickvals, "ticktext": year_ticktext},
         yaxis={
             "title": "城市数",
@@ -701,13 +787,20 @@ if not overall_trend.empty:
             "range": [-70, 70],
         },
     )
-    st.plotly_chart(fig, width="stretch")
-    if has_missing_overall_data:
-        st.markdown('<div class="trend-note">* 部分月份数据缺失</div>', unsafe_allow_html=True)
+    render_plotly_chart(fig)
+    overall_missing_note = missing_period_note(incomplete_overall_periods, "数据不完整")
+    if overall_missing_note:
+        st.markdown(f'<div class="trend-note">{overall_missing_note}</div>', unsafe_allow_html=True)
 
 cities = sorted(data["city"].unique())
 default_cities = [city for city in ["北京", "上海", "广州", "深圳"] if city in cities]
-selected_cities = st.multiselect("城市", cities, default=default_cities)
+if "trend_cities" not in st.session_state:
+    st.session_state["trend_cities"] = default_cities
+else:
+    st.session_state["trend_cities"] = [city for city in st.session_state["trend_cities"] if city in cities]
+
+st.markdown('<div class="chart-title">城市趋势</div>', unsafe_allow_html=True)
+selected_cities = st.multiselect("城市", cities, key="trend_cities")
 
 trend = data[
     (data["city"].isin(selected_cities))
@@ -723,7 +816,6 @@ if selected_cities and not trend.empty:
         names=["city", "period"],
     ).to_frame(index=False)
     trend_complete = trend_frame.merge(trend, on=["city", "period"], how="left")
-    has_missing_trend_data = bool(trend_complete["change_pct"].isna().any())
     year_tickvals, year_ticktext = period_year_ticks(trend_periods)
 
     fig = px.line(
@@ -732,13 +824,12 @@ if selected_cities and not trend.empty:
         y="change_pct",
         color="city",
         markers=True,
-        title="城市趋势",
         labels={"period": "年份", "change_pct": "较基期变动", "city": "城市"},
     )
     fig.add_hline(y=0, line_color="#666", line_width=1)
     fig.update_layout(
         height=440,
-        margin={"l": 55, "r": 20, "t": 70, "b": 72},
+        margin={"l": 55, "r": 20, "t": 45, "b": 72},
         xaxis={
             "title": "年份",
             "type": "category",
@@ -749,15 +840,48 @@ if selected_cities and not trend.empty:
             "ticktext": year_ticktext,
         },
     )
-    st.plotly_chart(fig, width="stretch")
-    if has_missing_trend_data:
-        st.markdown('<div class="trend-note">* 部分数据缺失</div>', unsafe_allow_html=True)
+    render_plotly_chart(fig)
+    missing_city_periods = (
+        trend_complete.loc[trend_complete["change_pct"].isna(), "period"].drop_duplicates().astype(str).tolist()
+    )
+    trend_missing_note = missing_period_note(missing_city_periods, "选中城市数据缺失")
+    if trend_missing_note:
+        st.markdown(f'<div class="trend-note">{trend_missing_note}</div>', unsafe_allow_html=True)
+
+if not international_context.empty:
+    st.markdown("#### 国际住宅价格指数")
+
+if not international_context.empty:
+    international_context["value"] = pd.to_numeric(international_context["value"], errors="coerce")
+    default_countries = [country for country in ["中国", "美国", "日本", "韩国"] if country in set(international_context["country"])]
+    selected_countries = st.multiselect("国际对比国家", sorted(international_context["country"].unique()), default=default_countries)
+    international_view = international_context[international_context["country"].isin(selected_countries)].copy()
+    if not international_view.empty:
+        fig = px.line(
+            international_view.sort_values(["country", "period"]),
+            x="period",
+            y="value",
+            color="country",
+            color_discrete_map=COUNTRY_COLOR_MAP,
+            labels={"period": "季度", "value": "指数", "country": "国家"},
+        )
+        fig.update_traces(
+            hovertemplate="国家 %{fullData.name}<br>季度 %{x}<br>指数 %{y:.1f}<extra></extra>"
+        )
+        fig.update_layout(
+            height=430,
+            legend={"orientation": "h", "y": 1.08, "x": 0},
+            margin={"l": 55, "r": 20, "t": 70, "b": 60},
+        )
+        render_plotly_chart(fig)
+        st.markdown('<div class="trend-note">* BIS 名义住宅价格指数，2010=100</div>', unsafe_allow_html=True)
 
 st.markdown(
     """
     <div class="app-footer">
-        ©️ <a href="https://github.com/taifuer" target="_blank" rel="noopener noreferrer">taifuer</a>
-        · 数据来源于 <a href="https://www.stats.gov.cn/" target="_blank" rel="noopener noreferrer">国家统计局</a>
+        ©️ <a href="https://github.com/taifuer/house_price_index" target="_blank" rel="noopener noreferrer">taifuer</a>
+        · 数据来源于 <a href="https://www.stats.gov.cn/" target="_blank" rel="noopener noreferrer">国家统计局</a>、
+        <a href="https://data.bis.org/" target="_blank" rel="noopener noreferrer">BIS</a>
         · Made with <a href="https://streamlit.io/" target="_blank" rel="noopener noreferrer">Streamlit</a>
     </div>
     """,

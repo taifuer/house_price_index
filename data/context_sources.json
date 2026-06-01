@@ -1,0 +1,7 @@
+[
+  {
+    "dataset": "international_prices",
+    "title": "BIS selected residential property prices",
+    "url": "https://data.bis.org/static/bulk/WS_SPP_csv_flat.zip"
+  }
+]

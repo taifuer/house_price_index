@@ -5,6 +5,7 @@
 This repository contains a Python scraper and Streamlit dashboard for the National Bureau of Statistics 70-city housing price index.
 
 - `scripts/fetch_stats.py`: CLI scraper, search API discovery, HTML parser, and CSV/JSON exporter.
+- `scripts/fetch_context_data.py`: fetches optional BIS residential property price bulk CSV data for international comparison.
 - `app.py`: Streamlit dashboard. It prefers `data/house_price_index_all.csv.gz`, falls back to `data/house_price_index_all.csv`, then `data/house_price_index.csv`. The UI defaults to `二手住宅`, includes ranking, distribution, tier comparison, and price trend views, and links the current filter title to the source page through an icon.
 - `.streamlit/config.toml`: Streamlit viewer toolbar configuration.
 - `assets/favicon.ico`: dashboard favicon asset.
@@ -42,6 +43,14 @@ python3 scripts/fetch_stats.py --incremental \
 
 Incremental mode only fetches periods newer than the current max `period`. Months not present in the NBS search API are recorded in `data/house_price_index_missing.json` instead of probing guessed URLs.
 
+Fetch international context data:
+
+```bash
+python3 scripts/fetch_context_data.py
+```
+
+The context script writes `data/context_bis_prices.csv.gz` and `data/context_sources.json`.
+
 Run the dashboard:
 
 ```bash
@@ -51,7 +60,7 @@ streamlit run app.py
 Run a syntax check:
 
 ```bash
-python3 -m py_compile scripts/fetch_stats.py app.py
+python3 -m py_compile scripts/fetch_stats.py scripts/fetch_context_data.py app.py
 ```
 
 ## Coding Style & Naming Conventions

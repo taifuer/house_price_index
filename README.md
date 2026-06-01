@@ -16,6 +16,7 @@
 ├── .streamlit/config.toml                  # Streamlit 本地展示配置
 ├── assets/favicon.ico                      # 房屋 favicon
 ├── scripts/fetch_stats.py                  # 数据获取、解析、导出 CLI
+├── scripts/fetch_context_data.py           # BIS 国际住宅价格指数获取 CLI
 ├── data/
 │   └── house_price_index_all.csv.gz        # 全历史长表数据（gzip 压缩 CSV）
 ├── requirements.txt
@@ -67,6 +68,14 @@ python3 scripts/fetch_stats.py \
   --out data/house_price_index_sample_history.csv
 ```
 
+获取国际住宅价格指数：
+
+```bash
+python3 scripts/fetch_context_data.py
+```
+
+该命令会生成 `data/context_bis_prices.csv.gz`，数据来源为 BIS 公开批量数据。
+
 ## 启动可视化
 
 ```bash
@@ -96,6 +105,7 @@ streamlit run app.py --server.port 8502 --server.address 0.0.0.0
 - 城市排名：按变动幅度排序，并可在图内切换全部、一线、二线、三线城市。
 - 首尾城市对比、城市涨跌分布、城市层级对比：展示极值、分布和一二三线城市的范围、均值、数量。
 - 价格趋势：同时展示整体趋势和城市趋势。整体趋势用发散堆叠柱显示每月上涨、持平、下跌城市数；城市趋势展示选中城市的长期折线。
+- 补充指标：展示 BIS 国际住宅价格指数；对应数据文件不存在或为空时自动隐藏。
 
 历史数据存在部分月份或表格缺失。趋势图会保留完整年份刻度；城市趋势会保留完整月份序列，缺失月份不显示数据点，但前后真实观测点保持连接。图下方出现 `* 部分数据缺失` 或 `* 部分月份数据缺失` 时，应结合 tooltip 中的覆盖城市数解读。
 
