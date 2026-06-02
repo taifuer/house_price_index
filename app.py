@@ -18,6 +18,7 @@ if not DATA_PATH.exists():
     DATA_PATH = Path("data/house_price_index.csv")
 INTERNATIONAL_CONTEXT_PATH = Path("data/context_bis_prices.csv.gz")
 FAVICON_PATH = Path("assets/favicon.ico")
+MOBILE_BREAKPOINT_PX = 768
 
 st.set_page_config(
     page_title="全国 70 城商品住宅价格指数",
@@ -26,9 +27,32 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+viewport_mode = str(st.query_params.get("viewport", "desktop"))
+is_mobile_viewport = viewport_mode == "mobile"
+st.html(
+    f"""
+    <script>
+    (() => {{
+        try {{
+            const width = window.innerWidth || document.documentElement.clientWidth || 0;
+            const mode = width > 0 && width < {MOBILE_BREAKPOINT_PX} ? "mobile" : "desktop";
+            const url = new URL(window.location.href);
+            if (url.searchParams.get("viewport") !== mode) {{
+                url.searchParams.set("viewport", mode);
+                window.location.replace(url.toString());
+            }}
+        }} catch (error) {{}}
+    }})();
+    </script>
+    """,
+    unsafe_allow_javascript=True,
+)
+
 SIZE_BAND_ORDER = ["全部", "90m2及以下", "90-144m2", "144m2以上"]
 METRIC_ORDER = ["环比", "同比", "累计平均"]
 RANK_TIER_OPTIONS = ["全部", "一线", "二线", "三线"]
+RANK_MOBILE_WINDOW = 10
+TREND_DEFAULT_YEARS = 5
 UP_COLOR = "#d92d20"
 DOWN_COLOR = "#2563eb"
 OVERALL_UP_COLOR = "#f97066"
@@ -177,14 +201,23 @@ def period_year_ticks(periods: list[str] | pd.Series) -> tuple[list[str], list[s
     return tickvals, ticktext
 
 
-def add_time_range_buttons(fig: go.Figure, periods: list[str] | pd.Series, periods_per_year: int = 12) -> None:
+def category_axis_range(periods: list[str] | pd.Series, count: int | None = None) -> list[float]:
+    ordered_periods = sorted(pd.Series(periods).dropna().astype(str).unique())
+    if not ordered_periods:
+        return [-0.5, 0.5]
+    start = 0 if count is None else max(0, len(ordered_periods) - count)
+    return [start - 0.5, len(ordered_periods) - 0.5]
+
+
+def add_time_range_buttons(
+    fig: go.Figure,
+    periods: list[str] | pd.Series,
+    periods_per_year: int = 12,
+    active_index: int = 0,
+) -> None:
     ordered_periods = sorted(pd.Series(periods).dropna().astype(str).unique())
     if len(ordered_periods) < 2:
         return
-
-    def range_for(count: int | None) -> list[float]:
-        start = 0 if count is None else max(0, len(ordered_periods) - count)
-        return [start - 0.5, len(ordered_periods) - 0.5]
 
     button_specs = [
         ("全部", None),
@@ -204,11 +237,12 @@ def add_time_range_buttons(fig: go.Figure, periods: list[str] | pd.Series, perio
                 "y": 1.12,
                 "yanchor": "top",
                 "pad": {"r": 0, "t": 0},
+                "active": active_index,
                 "buttons": [
                     {
                         "label": label,
                         "method": "relayout",
-                        "args": [{"xaxis.range": range_for(count)}],
+                        "args": [{"xaxis.range": category_axis_range(ordered_periods, count)}],
                     }
                     for label, count in button_specs
                 ],
@@ -450,6 +484,73 @@ st.markdown(
         color: #1d4ed8;
         text-decoration: underline;
     }}
+
+    @media (max-width: 900px) {{
+        [data-testid="stSidebar"] {{
+            box-shadow: 0 1.25rem 3rem rgba(16, 24, 40, 0.22);
+            height: 100vh !important;
+            max-width: min(88vw, 22rem) !important;
+            position: fixed !important;
+            top: 0 !important;
+            z-index: 999998 !important;
+        }}
+
+        [data-testid="stSidebar"] > div {{
+            background: #ffffff !important;
+        }}
+
+        [data-testid="stAppViewContainer"],
+        [data-testid="stMain"] {{
+            margin-left: 0 !important;
+        }}
+
+        [data-testid="stHeader"],
+        .stAppHeader {{
+            height: 3.25rem;
+        }}
+
+        [data-testid="stHeader"]::before,
+        .stAppHeader::before {{
+            font-size: 1.12rem;
+            left: 3.25rem;
+            max-width: calc(100vw - 5.75rem);
+        }}
+
+        .block-container {{
+            padding-left: 0.8rem;
+            padding-right: 0.8rem;
+            padding-top: 4.25rem;
+        }}
+
+        .view-title {{
+            align-items: flex-start;
+            flex-wrap: wrap;
+            font-size: 1rem;
+            gap: 0.25rem 0.4rem;
+            margin-bottom: 0.85rem;
+        }}
+
+        .chart-title {{
+            font-size: 0.98rem;
+            margin-top: 1.05rem;
+        }}
+
+        .chart-title.compact {{
+            margin-top: 0.35rem;
+        }}
+
+        .trend-note {{
+            font-size: 0.8rem;
+            margin-bottom: 1.1rem;
+        }}
+
+        .app-footer {{
+            font-size: 0.78rem;
+            line-height: 1.6;
+            padding-bottom: 1.35rem;
+            padding-top: 1.35rem;
+        }}
+    }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -511,6 +612,13 @@ def rank_bar_colors(view: pd.DataFrame) -> list[str]:
     )
 
 
+def rank_axis_range(view: pd.DataFrame) -> list[float]:
+    if view.empty:
+        return [0.5, 1.5]
+    visible_count = min(len(view), RANK_MOBILE_WINDOW) if is_mobile_viewport else len(view)
+    return [view["display_rank"].min() - 0.5, visible_count + 0.5]
+
+
 def rank_button_args(selected_tier: str) -> list[dict[str, object]]:
     view = build_rank_view(selected_tier)
     return [
@@ -524,7 +632,7 @@ def rank_button_args(selected_tier: str) -> list[dict[str, object]]:
         {
             "xaxis.tickvals": view["display_rank"].tolist(),
             "xaxis.ticktext": view["city"].tolist(),
-            "xaxis.range": [view["display_rank"].min() - 0.5, view["display_rank"].max() + 0.5],
+            "xaxis.range": rank_axis_range(view),
         },
     ]
 
@@ -560,7 +668,7 @@ fig.update_layout(
         "tickmode": "array",
         "tickvals": rank_view["display_rank"],
         "ticktext": rank_view["city"],
-        "range": [rank_view["display_rank"].min() - 0.5, rank_view["display_rank"].max() + 0.5],
+        "range": rank_axis_range(rank_view),
         "showgrid": False,
     },
     yaxis={"zeroline": True},
@@ -978,6 +1086,8 @@ if not overall_trend.empty:
         ),
     )
     fig.add_hline(y=0, line_color=BASELINE_COLOR, line_width=1)
+    trend_default_months = TREND_DEFAULT_YEARS * 12 if is_mobile_viewport else None
+    trend_active_index = 2 if is_mobile_viewport else 0
     fig.update_layout(
         barmode="relative",
         height=460,
@@ -988,7 +1098,7 @@ if not overall_trend.empty:
             "type": "category",
             "categoryorder": "array",
             "categoryarray": monthly["period"].tolist(),
-            "range": [-0.5, len(monthly) - 0.5],
+            "range": category_axis_range(monthly["period"], trend_default_months),
             "tickmode": "array",
             "tickvals": year_tickvals,
             "ticktext": year_ticktext,
@@ -1001,7 +1111,7 @@ if not overall_trend.empty:
             "range": [-70, 70],
         },
     )
-    add_time_range_buttons(fig, monthly["period"])
+    add_time_range_buttons(fig, monthly["period"], active_index=trend_active_index)
     render_plotly_chart(fig)
     overall_missing_note = missing_period_note(incomplete_overall_periods, "数据不完整")
     if overall_missing_note:
@@ -1042,6 +1152,8 @@ if selected_cities and not trend.empty:
         labels={"period": "年份", "change_pct": "较基期变动", "city": "城市"},
     )
     fig.add_hline(y=0, line_color=BASELINE_COLOR, line_width=1)
+    trend_default_months = TREND_DEFAULT_YEARS * 12 if is_mobile_viewport else None
+    trend_active_index = 2 if is_mobile_viewport else 0
     fig.update_layout(
         height=440,
         showlegend=False,
@@ -1051,13 +1163,13 @@ if selected_cities and not trend.empty:
             "type": "category",
             "categoryorder": "array",
             "categoryarray": trend_periods,
-            "range": [-0.5, len(trend_periods) - 0.5],
+            "range": category_axis_range(trend_periods, trend_default_months),
             "tickmode": "array",
             "tickvals": year_tickvals,
             "ticktext": year_ticktext,
         },
     )
-    add_time_range_buttons(fig, trend_periods)
+    add_time_range_buttons(fig, trend_periods, active_index=trend_active_index)
     render_plotly_chart(fig)
     missing_city_periods = (
         trend_complete.loc[trend_complete["change_pct"].isna(), "period"].drop_duplicates().astype(str).tolist()
@@ -1094,6 +1206,8 @@ if not international_context.empty:
         fig.update_traces(
             hovertemplate="国家 %{fullData.name}<br>季度 %{x}<br>指数 %{y:.1f}<extra></extra>"
         )
+        international_default_quarters = TREND_DEFAULT_YEARS * 4 if is_mobile_viewport else None
+        trend_active_index = 2 if is_mobile_viewport else 0
         fig.update_layout(
             height=430,
             showlegend=False,
@@ -1103,13 +1217,13 @@ if not international_context.empty:
                 "type": "category",
                 "categoryorder": "array",
                 "categoryarray": international_periods,
-                "range": [-0.5, len(international_periods) - 0.5],
+                "range": category_axis_range(international_periods, international_default_quarters),
                 "tickmode": "array",
                 "tickvals": year_tickvals,
                 "ticktext": year_ticktext,
             },
         )
-        add_time_range_buttons(fig, international_periods, periods_per_year=4)
+        add_time_range_buttons(fig, international_periods, periods_per_year=4, active_index=trend_active_index)
         render_plotly_chart(fig)
         st.markdown('<div class="trend-note">* BIS 名义住宅价格指数，2010=100</div>', unsafe_allow_html=True)
 
