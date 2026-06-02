@@ -251,6 +251,24 @@ def add_time_range_buttons(
     )
 
 
+def apply_top_left_legend(fig: go.Figure) -> None:
+    fig.update_layout(
+        showlegend=True,
+        legend={
+            "orientation": "h",
+            "x": 0,
+            "xanchor": "left",
+            "y": 1.12,
+            "yanchor": "top",
+            "font": {"size": 12},
+            "bgcolor": "rgba(255,255,255,0.72)",
+            "bordercolor": "rgba(208,213,221,0.85)",
+            "borderwidth": 1,
+        },
+        legend_title_text="",
+    )
+
+
 def summarize_period_ranges(periods: list[str]) -> str:
     ordered = sorted(pd.Series(periods).dropna().astype(str).unique())
     if not ordered:
@@ -383,20 +401,44 @@ st.markdown(
 
     [data-testid="stHeader"]::before,
     .stAppHeader::before {{
-        color: #111827;
-        content: "{css_content(header_title)}";
+        content: "";
+        display: none;
+    }}
+
+    .app-header-link,
+    .app-header-link:hover,
+    .app-header-link:focus,
+    .app-header-link:visited {{
+        color: #111827 !important;
+        text-decoration: none !important;
+    }}
+
+    .app-header-link {{
+        display: block;
         font-size: 1.5rem;
         font-weight: 700;
         left: 4rem;
         line-height: 1.1;
         max-width: calc(100vw - 8rem);
         overflow: hidden;
-        pointer-events: none;
-        position: absolute;
+        position: fixed;
         text-overflow: ellipsis;
-        top: 50%;
+        top: 1.75rem;
         transform: translateY(-50%);
         white-space: nowrap;
+        z-index: 999990;
+    }}
+
+    .app-header-link:hover,
+    .app-header-link:focus {{
+        color: #1d4ed8 !important;
+    }}
+
+    @media (min-width: 901px) {{
+        body:has([data-testid="stSidebar"][aria-expanded="true"]) .app-header-link {{
+            left: 25rem;
+            max-width: calc(100vw - 29rem);
+        }}
     }}
 
     .block-container {{
@@ -511,9 +553,15 @@ st.markdown(
 
         [data-testid="stHeader"]::before,
         .stAppHeader::before {{
+            content: "";
+            display: none;
+        }}
+
+        .app-header-link {{
             font-size: 1.12rem;
             left: 3.25rem;
             max-width: calc(100vw - 5.75rem);
+            top: 1.625rem;
         }}
 
         .block-container {{
@@ -553,6 +601,11 @@ st.markdown(
     }}
     </style>
     """,
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    f'<a class="app-header-link" href="" target="_self" aria-label="刷新页面">{html.escape(header_title)}</a>',
     unsafe_allow_html=True,
 )
 
@@ -1156,8 +1209,7 @@ if selected_cities and not trend.empty:
     trend_active_index = 2 if is_mobile_viewport else 0
     fig.update_layout(
         height=440,
-        showlegend=False,
-        margin={"l": 55, "r": 20, "t": 72, "b": 72},
+        margin={"l": 55, "r": 20, "t": 86, "b": 72},
         xaxis={
             "title": "年份",
             "type": "category",
@@ -1169,6 +1221,7 @@ if selected_cities and not trend.empty:
             "ticktext": year_ticktext,
         },
     )
+    apply_top_left_legend(fig)
     add_time_range_buttons(fig, trend_periods, active_index=trend_active_index)
     render_plotly_chart(fig)
     missing_city_periods = (
@@ -1210,8 +1263,7 @@ if not international_context.empty:
         trend_active_index = 2 if is_mobile_viewport else 0
         fig.update_layout(
             height=430,
-            showlegend=False,
-            margin={"l": 55, "r": 20, "t": 72, "b": 60},
+            margin={"l": 55, "r": 20, "t": 86, "b": 60},
             xaxis={
                 "title": "年度",
                 "type": "category",
@@ -1223,6 +1275,7 @@ if not international_context.empty:
                 "ticktext": year_ticktext,
             },
         )
+        apply_top_left_legend(fig)
         add_time_range_buttons(fig, international_periods, periods_per_year=4, active_index=trend_active_index)
         render_plotly_chart(fig)
         st.markdown('<div class="trend-note">* BIS 名义住宅价格指数，2010=100</div>', unsafe_allow_html=True)
