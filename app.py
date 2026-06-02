@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import streamlit as st
 
 
@@ -28,9 +29,21 @@ st.set_page_config(
 SIZE_BAND_ORDER = ["全部", "90m2及以下", "90-144m2", "144m2以上"]
 METRIC_ORDER = ["环比", "同比", "累计平均"]
 RANK_TIER_OPTIONS = ["全部", "一线", "二线", "三线"]
+UP_COLOR = "#d92d20"
+DOWN_COLOR = "#2563eb"
+OVERALL_UP_COLOR = "#f97066"
+OVERALL_DOWN_COLOR = "#60a5fa"
+FLAT_COLOR = "#98a2b3"
+BASELINE_COLOR = "#667085"
+MISSING_COLOR = "#d0d5dd"
+CHANGE_COLORSCALE = [
+    [0, DOWN_COLOR],
+    [0.5, MISSING_COLOR],
+    [1, UP_COLOR],
+]
 COUNTRY_COLOR_MAP = {
-    "中国": "#d92d20",
-    "美国": "#2563eb",
+    "中国": UP_COLOR,
+    "美国": DOWN_COLOR,
     "日本": "#12b76a",
     "韩国": "#7f56d9",
     "英国": "#f79009",
@@ -146,6 +159,10 @@ def format_period_label(value: str) -> str:
     return str(value)
 
 
+def format_size_band(value: str) -> str:
+    return str(value).replace("m2", "m²")
+
+
 def period_year_ticks(periods: list[str] | pd.Series) -> tuple[list[str], list[str]]:
     ordered_periods = sorted(pd.Series(periods).dropna().astype(str).unique())
     tickvals: list[str] = []
@@ -158,6 +175,46 @@ def period_year_ticks(periods: list[str] | pd.Series) -> tuple[list[str], list[s
             ticktext.append(f"{year}年")
             seen_years.add(year)
     return tickvals, ticktext
+
+
+def add_time_range_buttons(fig: go.Figure, periods: list[str] | pd.Series, periods_per_year: int = 12) -> None:
+    ordered_periods = sorted(pd.Series(periods).dropna().astype(str).unique())
+    if len(ordered_periods) < 2:
+        return
+
+    def range_for(count: int | None) -> list[float]:
+        start = 0 if count is None else max(0, len(ordered_periods) - count)
+        return [start - 0.5, len(ordered_periods) - 0.5]
+
+    button_specs = [
+        ("全部", None),
+        ("近3年", 3 * periods_per_year),
+        ("近5年", 5 * periods_per_year),
+        ("近10年", 10 * periods_per_year),
+    ]
+    existing_menus = list(fig.layout.updatemenus) if fig.layout.updatemenus else []
+    fig.update_layout(
+        updatemenus=existing_menus
+        + [
+            {
+                "type": "buttons",
+                "direction": "left",
+                "x": 0.99,
+                "xanchor": "right",
+                "y": 1.12,
+                "yanchor": "top",
+                "pad": {"r": 0, "t": 0},
+                "buttons": [
+                    {
+                        "label": label,
+                        "method": "relayout",
+                        "args": [{"xaxis.range": range_for(count)}],
+                    }
+                    for label, count in button_specs
+                ],
+            }
+        ]
+    )
 
 
 def summarize_period_ranges(periods: list[str]) -> str:
@@ -225,7 +282,7 @@ with st.sidebar:
 
     scoped = data[(data["period"] == period) & (data["house_type"] == house_type)]
     size_bands = ordered_values(scoped["size_band"], SIZE_BAND_ORDER)
-    size_band = st.selectbox("面积段", size_bands)
+    size_band = st.selectbox("面积段", size_bands, format_func=format_size_band)
 
     scoped = scoped[scoped["size_band"] == size_band]
     metrics = ordered_values(scoped["metric"], METRIC_ORDER)
@@ -257,7 +314,8 @@ if filtered.empty:
 
 header_title = "全国 70 城商品住宅价格指数"
 source = filtered["source_url"].dropna().iloc[0]
-view_title = f"{format_period_label(period)} · {house_type} · {size_band} · {metric}"
+size_band_label = format_size_band(size_band)
+view_title = f"价格概览 · {house_type} · {size_band_label} · {metric} · {format_period_label(period)}"
 st.markdown(
     f"""
     <style>
@@ -448,7 +506,7 @@ def build_rank_view(selected_tier: str) -> pd.DataFrame:
 
 def rank_bar_colors(view: pd.DataFrame) -> list[str]:
     return px.colors.sample_colorscale(
-        "RdBu_r",
+        CHANGE_COLORSCALE,
         ((view["change_pct"] + rank_color_limit) / (2 * rank_color_limit)).clip(0, 1).tolist(),
     )
 
@@ -494,7 +552,7 @@ fig.add_bar(
         "变动 %{y:+.1f}<extra></extra>"
     ),
 )
-fig.add_hline(y=0, line_color="#666", line_width=1)
+fig.add_hline(y=0, line_color=BASELINE_COLOR, line_width=1)
 fig.update_layout(
     height=580,
     xaxis={
@@ -531,7 +589,8 @@ fig.update_layout(
 fig.update_xaxes(tickangle=-35)
 render_plotly_chart(fig)
 
-extreme_col, dist_col, tier_col = st.columns([1, 1, 1])
+extreme_col, dist_col = st.columns([1, 1])
+tier_col = st.container()
 
 with extreme_col:
     st.markdown('<div class="chart-title compact">首尾城市对比</div>', unsafe_allow_html=True)
@@ -541,12 +600,13 @@ with extreme_col:
         x="change_pct",
         y="city",
         color="change_pct",
-        color_continuous_scale="RdBu_r",
+        color_continuous_scale=CHANGE_COLORSCALE,
+        range_color=[-rank_color_limit, rank_color_limit],
         orientation="h",
         text=extremes.sort_values("change_pct")["change_pct"].map(format_pct),
         labels={"change_pct": "较基期变动", "city": "城市"},
     )
-    fig.add_vline(x=0, line_color="#666", line_width=1)
+    fig.add_vline(x=0, line_color=BASELINE_COLOR, line_width=1)
     fig.update_traces(textposition="outside", cliponaxis=False)
     fig.update_layout(height=390, margin={"l": 70, "r": 20, "t": 35, "b": 45}, coloraxis_showscale=False)
     render_plotly_chart(fig)
@@ -575,8 +635,7 @@ with dist_col:
         width=1,
         marker={
             "color": dist["bin_mid"],
-            "colorscale": "RdBu",
-            "reversescale": True,
+            "colorscale": CHANGE_COLORSCALE,
             "cmin": -color_limit,
             "cmax": color_limit,
             "line": {"width": 0},
@@ -594,12 +653,12 @@ with dist_col:
         zero_width = zero_row["bin_right"] - zero_row["bin_left"]
         zero_offset = 0 if zero_width == 0 else (0 - zero_row["bin_left"]) / zero_width
         zero_tick = float(zero_row["x_pos"] - 0.5 + zero_offset)
-        fig.add_vline(x=zero_tick, line_color="#666", line_width=1)
+        fig.add_vline(x=zero_tick, line_color=BASELINE_COLOR, line_width=1)
     else:
         left_of_zero = int((dist["bin_right"] < 0).sum())
         if 0 < left_of_zero < len(dist):
             zero_tick = left_of_zero - 0.5
-            fig.add_vline(x=zero_tick, line_color="#666", line_width=1)
+            fig.add_vline(x=zero_tick, line_color=BASELINE_COLOR, line_width=1)
     if zero_tick is not None and all(abs(zero_tick - value) > 0.4 for value in tick_values):
         tick_values.insert(1, zero_tick)
         tick_labels.insert(1, "0")
@@ -641,73 +700,219 @@ with tier_col:
     visible_tier_order = [tier for tier in tier_order if tier in set(tier_summary["city_tier"])]
     tier_y_map = {tier: len(visible_tier_order) - index - 1 for index, tier in enumerate(visible_tier_order)}
     tier_summary["tier_y"] = tier_summary["city_tier"].map(tier_y_map)
-    tier_colors = {"一线": "#2f6f9f", "二线": "#7a6bca", "三线": "#9f7a2f", "未分层": "#667085"}
+    tier_summary["down_display"] = -tier_summary["down"]
+    tier_summary["flat_base"] = -tier_summary["flat"] / 2
+    tier_customdata = tier_summary[
+        ["city_tier", "cities", "up", "flat", "down", "avg_change", "min_change", "max_change"]
+    ].values.tolist()
 
-    fig = go.Figure()
+    fig = make_subplots(
+        rows=1,
+        cols=2,
+        shared_yaxes=True,
+        horizontal_spacing=0.08,
+        column_widths=[0.44, 0.56],
+        subplot_titles=("涨跌数量", "涨跌幅范围"),
+    )
+    fig.add_bar(
+        x=tier_summary["down_display"],
+        y=tier_summary["tier_y"],
+        orientation="h",
+        marker_color=OVERALL_DOWN_COLOR,
+        text=tier_summary["down"].map(lambda value: str(value) if value else ""),
+        textposition="inside",
+        insidetextanchor="middle",
+        textfont={"color": "#ffffff", "size": 11},
+        customdata=tier_customdata,
+        hovertemplate=(
+            "%{customdata[0]}<br>"
+            "下跌 %{customdata[4]} 城<br>上涨 %{customdata[2]} 城<br>持平 %{customdata[3]} 城<br>"
+            "均值 %{customdata[5]:+.1f}<br>范围 %{customdata[6]:+.1f} 至 %{customdata[7]:+.1f}"
+            "<extra></extra>"
+        ),
+        showlegend=False,
+        width=0.34,
+        row=1,
+        col=1,
+    )
+    fig.add_bar(
+        x=tier_summary["up"],
+        y=tier_summary["tier_y"],
+        orientation="h",
+        marker_color=OVERALL_UP_COLOR,
+        text=tier_summary["up"].map(lambda value: str(value) if value else ""),
+        textposition="inside",
+        insidetextanchor="middle",
+        textfont={"color": "#ffffff", "size": 11},
+        customdata=tier_customdata,
+        hovertemplate=(
+            "%{customdata[0]}<br>"
+            "上涨 %{customdata[2]} 城<br>下跌 %{customdata[4]} 城<br>持平 %{customdata[3]} 城<br>"
+            "均值 %{customdata[5]:+.1f}<br>范围 %{customdata[6]:+.1f} 至 %{customdata[7]:+.1f}"
+            "<extra></extra>"
+        ),
+        showlegend=False,
+        width=0.34,
+        row=1,
+        col=1,
+    )
+    flat_rows = tier_summary[tier_summary["flat"] > 0]
+    if not flat_rows.empty:
+        fig.add_bar(
+            x=flat_rows["flat"],
+            y=flat_rows["tier_y"],
+            base=flat_rows["flat_base"],
+            orientation="h",
+            marker_color=FLAT_COLOR,
+            text=flat_rows["flat"].map(str),
+            textposition="inside",
+            insidetextanchor="middle",
+            textfont={"color": "#ffffff", "size": 11},
+            customdata=flat_rows[
+                ["city_tier", "cities", "up", "flat", "down", "avg_change", "min_change", "max_change"]
+            ].values.tolist(),
+            hovertemplate=(
+                "%{customdata[0]}<br>"
+                "持平 %{customdata[3]} 城<br>上涨 %{customdata[2]} 城<br>下跌 %{customdata[4]} 城<br>"
+                "均值 %{customdata[5]:+.1f}<br>范围 %{customdata[6]:+.1f} 至 %{customdata[7]:+.1f}"
+                "<extra></extra>"
+            ),
+            showlegend=False,
+            width=0.34,
+            row=1,
+            col=1,
+        )
+
     for row in tier_summary.itertuples(index=False):
-        color = tier_colors.get(row.city_tier, "#667085")
+        range_customdata = [[
+            row.city_tier,
+            row.cities,
+            row.up,
+            row.flat,
+            row.down,
+            row.avg_change,
+            row.min_change,
+            row.max_change,
+        ]]
+        range_line_customdata = range_customdata * 2
         fig.add_scatter(
             x=[row.min_change, row.max_change],
             y=[row.tier_y, row.tier_y],
             mode="lines",
-            line={"color": color, "width": 16},
-            opacity=0.28,
-            hoverinfo="skip",
+            line={"color": BASELINE_COLOR, "width": 14},
+            opacity=0.22,
+            customdata=range_line_customdata,
+            hovertemplate=(
+                "%{customdata[0]}<br>"
+                "范围 %{customdata[6]:+.1f} 至 %{customdata[7]:+.1f}<br>"
+                "均值 %{customdata[5]:+.1f}<br>上涨 %{customdata[2]} 城｜持平 %{customdata[3]} 城｜下跌 %{customdata[4]} 城"
+                "<extra></extra>"
+            ),
             showlegend=False,
+            row=1,
+            col=2,
         )
         fig.add_scatter(
             x=[row.min_change, row.max_change],
             y=[row.tier_y, row.tier_y],
             mode="markers",
-            marker={"color": color, "size": 9, "line": {"color": "#ffffff", "width": 1}},
-            customdata=[[row.city_tier, "最低"], [row.city_tier, "最高"]],
-            hovertemplate="%{customdata[0]} %{customdata[1]} %{x:+.1f}<extra></extra>",
+            marker={
+                "color": [OVERALL_DOWN_COLOR, OVERALL_UP_COLOR],
+                "size": 9,
+                "line": {"color": "#ffffff", "width": 1},
+            },
+            hoverinfo="skip",
             showlegend=False,
+            row=1,
+            col=2,
         )
         fig.add_scatter(
             x=[row.avg_change],
             y=[row.tier_y],
             mode="markers+text",
-            marker={"symbol": "diamond", "color": "#111827", "size": 13, "line": {"color": "#ffffff", "width": 2}},
+            marker={
+                "symbol": "diamond",
+                "color": "#111827",
+                "size": 13,
+                "line": {"color": "#ffffff", "width": 2},
+            },
             text=[format_pct(row.avg_change)],
             textposition="top center",
-            customdata=[[row.min_change, row.max_change, row.cities, row.up, row.flat, row.down]],
+            customdata=range_customdata,
             hovertemplate=(
-                "均值 %{x:+.1f}<br>"
-                "范围 %{customdata[0]:+.1f} 至 %{customdata[1]:+.1f}<br>"
-                "城市 %{customdata[2]}｜↑%{customdata[3]}｜-%{customdata[4]}｜↓%{customdata[5]}"
+                "%{customdata[0]}<br>"
+                "均值 %{customdata[5]:+.1f}<br>范围 %{customdata[6]:+.1f} 至 %{customdata[7]:+.1f}<br>"
+                "上涨 %{customdata[2]} 城｜持平 %{customdata[3]} 城｜下跌 %{customdata[4]} 城"
                 "<extra></extra>"
             ),
             showlegend=False,
+            row=1,
+            col=2,
         )
         fig.add_annotation(
-            x=row.avg_change,
+            x=(row.min_change + row.max_change) / 2,
             y=row.tier_y - 0.28,
-            text=f"{row.cities}城 ↑{row.up} -{row.flat} ↓{row.down}",
+            text=f"{row.cities}城 · ↑{row.up} -{row.flat} ↓{row.down}",
             showarrow=False,
             xanchor="center",
             yanchor="top",
             font={"size": 11, "color": "#475467"},
+            row=1,
+            col=2,
         )
 
-    tier_axis_limit = max(abs(tier_summary["min_change"].min()), abs(tier_summary["max_change"].max()), 0.1)
-    fig.add_vline(x=0, line_color="#666", line_width=1)
+    tier_axis_limit = max(
+        int(tier_summary[["up", "down"]].max().max()),
+        int((tier_summary["flat"].max() / 2).round()),
+        1,
+    )
+    tier_axis_limit = max(tier_axis_limit, 4)
+    tick_step = 10 if tier_axis_limit > 20 else 5
+    tier_axis_limit = ((tier_axis_limit + tick_step - 1) // tick_step) * tick_step
+    tick_values = list(range(-tier_axis_limit, tier_axis_limit + 1, tick_step))
+    change_axis_limit = max(abs(tier_summary["min_change"].min()), abs(tier_summary["max_change"].max()), 0.1)
+    fig.add_vline(x=0, line_color=BASELINE_COLOR, line_width=1, row=1, col=1)
+    fig.add_vline(x=0, line_color=BASELINE_COLOR, line_width=1, row=1, col=2)
     fig.update_layout(
-        height=420,
-        margin={"l": 65, "r": 25, "t": 35, "b": 50},
-        xaxis={"title": "较基期变动", "range": [-tier_axis_limit * 1.15, tier_axis_limit * 1.15]},
-        yaxis={
-            "title": "",
-            "tickmode": "array",
-            "tickvals": [tier_y_map[tier] for tier in visible_tier_order],
-            "ticktext": visible_tier_order,
-            "range": [-0.55, len(visible_tier_order) - 0.35],
-        },
+        barmode="relative",
+        height=390,
+        margin={"l": 65, "r": 45, "t": 58, "b": 48},
         showlegend=False,
+    )
+    fig.update_xaxes(
+        title="城市数",
+        range=[-tier_axis_limit * 1.12, tier_axis_limit * 1.12],
+        tickmode="array",
+        tickvals=tick_values,
+        ticktext=[str(abs(value)) for value in tick_values],
+        row=1,
+        col=1,
+    )
+    fig.update_xaxes(
+        title="较基期变动",
+        range=[-change_axis_limit * 1.18, change_axis_limit * 1.45],
+        zeroline=False,
+        row=1,
+        col=2,
+    )
+    fig.update_yaxes(
+        title="",
+        tickmode="array",
+        tickvals=[tier_y_map[tier] for tier in visible_tier_order],
+        ticktext=visible_tier_order,
+        range=[-0.65, len(visible_tier_order) - 0.2],
+        row=1,
+        col=1,
+    )
+    fig.update_yaxes(
+        showticklabels=False,
+        range=[-0.65, len(visible_tier_order) - 0.2],
+        row=1,
+        col=2,
     )
     render_plotly_chart(fig)
 
-st.markdown("#### 价格趋势")
+st.markdown(f"#### 价格趋势 · {house_type} · {size_band_label} · {metric}")
 overall_trend = data[
     (data["house_type"] == house_type)
     & (data["size_band"] == size_band)
@@ -743,7 +948,7 @@ if not overall_trend.empty:
         x=monthly["period"],
         y=monthly["up_display"],
         name="上涨",
-        marker_color="#d92d20",
+        marker_color=OVERALL_UP_COLOR,
         customdata=overall_customdata,
         hovertemplate=(
             "月份 %{x}<br>上涨 %{customdata[0]}<br>持平 %{customdata[1]}<br>"
@@ -754,7 +959,7 @@ if not overall_trend.empty:
         x=monthly["period"],
         y=monthly["flat_display"],
         name="持平",
-        marker_color="#98a2b3",
+        marker_color=FLAT_COLOR,
         customdata=overall_customdata,
         hovertemplate=(
             "月份 %{x}<br>上涨 %{customdata[0]}<br>持平 %{customdata[1]}<br>"
@@ -765,20 +970,29 @@ if not overall_trend.empty:
         x=monthly["period"],
         y=-monthly["down_display"],
         name="下跌",
-        marker_color="#2563eb",
+        marker_color=OVERALL_DOWN_COLOR,
         customdata=overall_customdata,
         hovertemplate=(
             "月份 %{x}<br>上涨 %{customdata[0]}<br>持平 %{customdata[1]}<br>"
             "下跌 %{customdata[2]}<br>覆盖城市 %{customdata[3]}/70<br>%{customdata[4]}<extra></extra>"
         ),
     )
-    fig.add_hline(y=0, line_color="#667085", line_width=1)
+    fig.add_hline(y=0, line_color=BASELINE_COLOR, line_width=1)
     fig.update_layout(
         barmode="relative",
         height=460,
-        legend={"orientation": "h", "y": 1.08, "x": 0},
-        margin={"l": 55, "r": 20, "t": 45, "b": 72},
-        xaxis={"title": "年份", "tickmode": "array", "tickvals": year_tickvals, "ticktext": year_ticktext},
+        showlegend=False,
+        margin={"l": 55, "r": 20, "t": 72, "b": 72},
+        xaxis={
+            "title": "年份",
+            "type": "category",
+            "categoryorder": "array",
+            "categoryarray": monthly["period"].tolist(),
+            "range": [-0.5, len(monthly) - 0.5],
+            "tickmode": "array",
+            "tickvals": year_tickvals,
+            "ticktext": year_ticktext,
+        },
         yaxis={
             "title": "城市数",
             "tickmode": "array",
@@ -787,6 +1001,7 @@ if not overall_trend.empty:
             "range": [-70, 70],
         },
     )
+    add_time_range_buttons(fig, monthly["period"])
     render_plotly_chart(fig)
     overall_missing_note = missing_period_note(incomplete_overall_periods, "数据不完整")
     if overall_missing_note:
@@ -800,7 +1015,7 @@ else:
     st.session_state["trend_cities"] = [city for city in st.session_state["trend_cities"] if city in cities]
 
 st.markdown('<div class="chart-title">城市趋势</div>', unsafe_allow_html=True)
-selected_cities = st.multiselect("城市", cities, key="trend_cities")
+selected_cities = st.multiselect("城市", cities, key="trend_cities", label_visibility="collapsed")
 
 trend = data[
     (data["city"].isin(selected_cities))
@@ -826,20 +1041,23 @@ if selected_cities and not trend.empty:
         markers=True,
         labels={"period": "年份", "change_pct": "较基期变动", "city": "城市"},
     )
-    fig.add_hline(y=0, line_color="#666", line_width=1)
+    fig.add_hline(y=0, line_color=BASELINE_COLOR, line_width=1)
     fig.update_layout(
         height=440,
-        margin={"l": 55, "r": 20, "t": 45, "b": 72},
+        showlegend=False,
+        margin={"l": 55, "r": 20, "t": 72, "b": 72},
         xaxis={
             "title": "年份",
             "type": "category",
             "categoryorder": "array",
             "categoryarray": trend_periods,
+            "range": [-0.5, len(trend_periods) - 0.5],
             "tickmode": "array",
             "tickvals": year_tickvals,
             "ticktext": year_ticktext,
         },
     )
+    add_time_range_buttons(fig, trend_periods)
     render_plotly_chart(fig)
     missing_city_periods = (
         trend_complete.loc[trend_complete["change_pct"].isna(), "period"].drop_duplicates().astype(str).tolist()
@@ -854,25 +1072,44 @@ if not international_context.empty:
 if not international_context.empty:
     international_context["value"] = pd.to_numeric(international_context["value"], errors="coerce")
     default_countries = [country for country in ["中国", "美国", "日本", "韩国"] if country in set(international_context["country"])]
-    selected_countries = st.multiselect("国际对比国家", sorted(international_context["country"].unique()), default=default_countries)
+    selected_countries = st.multiselect(
+        "国际对比国家",
+        sorted(international_context["country"].unique()),
+        default=default_countries,
+        label_visibility="collapsed",
+    )
     international_view = international_context[international_context["country"].isin(selected_countries)].copy()
     if not international_view.empty:
+        international_periods = sorted(international_view["period"].dropna().astype(str).unique())
+        year_tickvals, year_ticktext = period_year_ticks(international_periods)
         fig = px.line(
             international_view.sort_values(["country", "period"]),
             x="period",
             y="value",
             color="country",
+            markers=True,
             color_discrete_map=COUNTRY_COLOR_MAP,
-            labels={"period": "季度", "value": "指数", "country": "国家"},
+            labels={"period": "年度", "value": "指数", "country": "国家"},
         )
         fig.update_traces(
             hovertemplate="国家 %{fullData.name}<br>季度 %{x}<br>指数 %{y:.1f}<extra></extra>"
         )
         fig.update_layout(
             height=430,
-            legend={"orientation": "h", "y": 1.08, "x": 0},
-            margin={"l": 55, "r": 20, "t": 70, "b": 60},
+            showlegend=False,
+            margin={"l": 55, "r": 20, "t": 72, "b": 60},
+            xaxis={
+                "title": "年度",
+                "type": "category",
+                "categoryorder": "array",
+                "categoryarray": international_periods,
+                "range": [-0.5, len(international_periods) - 0.5],
+                "tickmode": "array",
+                "tickvals": year_tickvals,
+                "ticktext": year_ticktext,
+            },
         )
+        add_time_range_buttons(fig, international_periods, periods_per_year=4)
         render_plotly_chart(fig)
         st.markdown('<div class="trend-note">* BIS 名义住宅价格指数，2010=100</div>', unsafe_allow_html=True)
 
