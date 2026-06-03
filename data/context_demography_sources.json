@@ -1,0 +1,26 @@
+[
+  {
+    "dataset": "country_demography",
+    "title": "World Population Prospects 2024: Demographic indicators compact",
+    "url": "https://population.un.org/wpp/assets/Excel%20Files/1_Indicator%20(Standard)/EXCEL_FILES/1_General/WPP2024_GEN_F01_DEMOGRAPHIC_INDICATORS_COMPACT.xlsx",
+    "note": "Estimates sheet for 1950-2023 and Medium variant sheet for 2024 onward. Official latest records override matching country-year-metric projections where available. Count indicators converted from thousands to 10,000 persons."
+  },
+  {
+    "dataset": "country_demography",
+    "title": "国家统计局",
+    "url": "https://www.stats.gov.cn/sj/zxfb/202502/t20250228_1958817.html",
+    "note": "中华人民共和国2024年国民经济和社会发展统计公报；全国人口为年末大陆31省区市和现役军人口径，不含港澳台居民和外籍人员。"
+  },
+  {
+    "dataset": "country_demography",
+    "title": "国家统计局",
+    "url": "https://www.stats.gov.cn/sj/zxfb/202602/t20260228_1962662.html",
+    "note": "中华人民共和国2025年国民经济和社会发展统计公报；全国人口为年末大陆31省区市和现役军人口径，不含港澳台居民和外籍人员。"
+  },
+  {
+    "dataset": "country_demography",
+    "title": "Destatis",
+    "url": "https://www.destatis.de/EN/Themes/Society-Environment/Population/Births/Tables/lrbev04.html",
+    "note": "德国联邦统计局年度出生死亡长期序列；自然增长率由官方出生率减死亡率计算。"
+  }
+]
