@@ -1287,7 +1287,6 @@ with st.expander(f"价格趋势 · {house_type} · {size_band_label} · {metric}
         fig.update_layout(
             barmode="relative",
             height=460,
-            showlegend=False,
             margin={"l": 55, "r": 20, "t": 72, "b": 72},
             xaxis={
                 "title": "年份",
@@ -1307,6 +1306,7 @@ with st.expander(f"价格趋势 · {house_type} · {size_band_label} · {metric}
                 "range": [-70, 70],
             },
         )
+        apply_top_left_legend(fig)
         add_time_range_buttons(fig, monthly["period"], active_index=trend_active_index)
         render_plotly_chart(fig)
         overall_missing_note = missing_period_note(incomplete_overall_periods, "数据不完整")
