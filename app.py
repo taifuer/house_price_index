@@ -1432,7 +1432,7 @@ if not demography_context.empty:
         demography_context[text_column] = demography_context[text_column].fillna("").astype(str)
 
 if not demography_context.empty:
-    with st.expander("国际人口动态", expanded=True):
+    with st.expander("国际人口动态", expanded=False):
         has_demography_series_type = "series_type" in demography_context.columns
         default_demography_countries = [
             country for country in ["中国", "美国", "日本", "韩国"] if country in set(demography_context["country"])
