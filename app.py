@@ -38,7 +38,8 @@ st.html(
             const width = window.innerWidth || document.documentElement.clientWidth || 0;
             const mode = width > 0 && width < {MOBILE_BREAKPOINT_PX} ? "mobile" : "desktop";
             const url = new URL(window.location.href);
-            if (url.searchParams.get("viewport") !== mode) {{
+            const current = url.searchParams.get("viewport");
+            if ((current && current !== mode) || (!current && mode === "mobile")) {{
                 url.searchParams.set("viewport", mode);
                 window.location.replace(url.toString());
             }}
@@ -149,7 +150,7 @@ TIER_MAP = {
 }
 
 
-@st.cache_data
+@st.cache_data(max_entries=1)
 def load_data(path: Path, mtime_ns: int) -> pd.DataFrame:
     del mtime_ns
     df = pd.read_csv(path)
@@ -160,7 +161,7 @@ def load_data(path: Path, mtime_ns: int) -> pd.DataFrame:
     return df.dropna(subset=["value"])
 
 
-@st.cache_data
+@st.cache_data(max_entries=4)
 def load_optional_csv(path: Path, mtime_ns: int) -> pd.DataFrame:
     del mtime_ns
     if not path.exists():
