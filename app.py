@@ -868,7 +868,7 @@ with st.expander(view_title, expanded=True):
             "全市排名 %{customdata[2]}<br>"
             "城市 %{customdata[0]}（%{customdata[3]}）<br>"
             "指数 %{customdata[1]:.1f}<br>"
-            "变动 %{y:+.1f}<extra></extra>"
+            "变动 %{y:.1f}<extra></extra>"
         ),
     )
     fig.add_hline(y=0, line_color=BASELINE_COLOR, line_width=1)
@@ -960,7 +960,7 @@ with st.expander(view_title, expanded=True):
                 "line": {"width": 0},
             },
             customdata=dist[["range_label", "bin_mid"]],
-            hovertemplate="变动区间 %{customdata[0]}<br>城市数 %{y}<br>区间中点 %{customdata[1]:+.2f}<extra></extra>",
+            hovertemplate="变动区间 %{customdata[0]}<br>城市数 %{y}<br>区间中点 %{customdata[1]:.2f}<extra></extra>",
         )
 
         tick_values = [0, len(dist) - 1]
@@ -1046,7 +1046,7 @@ with st.expander(view_title, expanded=True):
             hovertemplate=(
                 "%{customdata[0]}<br>"
                 "下跌 %{customdata[4]} 城<br>上涨 %{customdata[2]} 城<br>持平 %{customdata[3]} 城<br>"
-                "均值 %{customdata[5]:+.1f}<br>范围 %{customdata[6]:+.1f} 至 %{customdata[7]:+.1f}"
+                "均值 %{customdata[5]:.1f}<br>范围 %{customdata[6]:.1f} 至 %{customdata[7]:.1f}"
                 "<extra></extra>"
             ),
             showlegend=False,
@@ -1067,7 +1067,7 @@ with st.expander(view_title, expanded=True):
             hovertemplate=(
                 "%{customdata[0]}<br>"
                 "上涨 %{customdata[2]} 城<br>下跌 %{customdata[4]} 城<br>持平 %{customdata[3]} 城<br>"
-                "均值 %{customdata[5]:+.1f}<br>范围 %{customdata[6]:+.1f} 至 %{customdata[7]:+.1f}"
+                "均值 %{customdata[5]:.1f}<br>范围 %{customdata[6]:.1f} 至 %{customdata[7]:.1f}"
                 "<extra></extra>"
             ),
             showlegend=False,
@@ -1093,7 +1093,7 @@ with st.expander(view_title, expanded=True):
                 hovertemplate=(
                     "%{customdata[0]}<br>"
                     "持平 %{customdata[3]} 城<br>上涨 %{customdata[2]} 城<br>下跌 %{customdata[4]} 城<br>"
-                    "均值 %{customdata[5]:+.1f}<br>范围 %{customdata[6]:+.1f} 至 %{customdata[7]:+.1f}"
+                    "均值 %{customdata[5]:.1f}<br>范围 %{customdata[6]:.1f} 至 %{customdata[7]:.1f}"
                     "<extra></extra>"
                 ),
                 showlegend=False,
@@ -1123,8 +1123,8 @@ with st.expander(view_title, expanded=True):
                 customdata=range_line_customdata,
                 hovertemplate=(
                     "%{customdata[0]}<br>"
-                    "范围 %{customdata[6]:+.1f} 至 %{customdata[7]:+.1f}<br>"
-                    "均值 %{customdata[5]:+.1f}<br>上涨 %{customdata[2]} 城｜持平 %{customdata[3]} 城｜下跌 %{customdata[4]} 城"
+                    "范围 %{customdata[6]:.1f} 至 %{customdata[7]:.1f}<br>"
+                    "均值 %{customdata[5]:.1f}<br>上涨 %{customdata[2]} 城｜持平 %{customdata[3]} 城｜下跌 %{customdata[4]} 城"
                     "<extra></extra>"
                 ),
                 showlegend=False,
@@ -1160,7 +1160,7 @@ with st.expander(view_title, expanded=True):
                 customdata=range_customdata,
                 hovertemplate=(
                     "%{customdata[0]}<br>"
-                    "均值 %{customdata[5]:+.1f}<br>范围 %{customdata[6]:+.1f} 至 %{customdata[7]:+.1f}<br>"
+                    "均值 %{customdata[5]:.1f}<br>范围 %{customdata[6]:.1f} 至 %{customdata[7]:.1f}<br>"
                     "上涨 %{customdata[2]} 城｜持平 %{customdata[3]} 城｜下跌 %{customdata[4]} 城"
                     "<extra></extra>"
                 ),
@@ -1566,6 +1566,15 @@ if not demography_context.empty:
                     "tickvals": year_tickvals,
                     "ticktext": year_ticktext,
                 },
+            )
+            fig.update_xaxes(
+                type="category",
+                categoryorder="array",
+                categoryarray=flow_periods,
+                tickmode="array",
+                tickvals=year_tickvals,
+                ticktext=year_ticktext,
+                matches=None,
             )
             fig.update_yaxes(matches=None)
             fig.for_each_annotation(lambda annotation: annotation.update(text=annotation.text.split("=")[-1]))
