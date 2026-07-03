@@ -55,6 +55,17 @@ METRIC_ORDER = ["环比", "同比", "累计平均"]
 RANK_TIER_OPTIONS = ["全部", "一线", "二线", "三线"]
 RANK_MOBILE_WINDOW = 10
 TREND_DEFAULT_YEARS = 5
+DATA_CATEGORY_COLUMNS = [
+    "table_name",
+    "house_type",
+    "size_band",
+    "city",
+    "metric",
+    "base",
+    "source_url",
+    "title",
+    "city_tier",
+]
 UP_COLOR = "#d92d20"
 DOWN_COLOR = "#2563eb"
 OVERALL_UP_COLOR = "#f97066"
@@ -158,7 +169,10 @@ def load_data(path: Path, mtime_ns: int) -> pd.DataFrame:
     df["value"] = pd.to_numeric(df["value"], errors="coerce")
     df["change_pct"] = pd.to_numeric(df["change_pct"], errors="coerce")
     df["city_tier"] = df["city"].map(TIER_MAP).fillna("未分层")
-    return df.dropna(subset=["value"])
+    df = df.dropna(subset=["value"])
+    for column in DATA_CATEGORY_COLUMNS:
+        df[column] = df[column].astype("category")
+    return df
 
 
 @st.cache_data(max_entries=4)
