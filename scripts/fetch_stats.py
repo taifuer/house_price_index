@@ -701,10 +701,26 @@ def write_json(records: list[dict], output_path: Path) -> None:
     output_path.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def fetch_and_parse_url(url: str, args: argparse.Namespace) -> tuple[list[dict], list[str]]:
+def fetch_and_parse_url(
+    url: str,
+    args: argparse.Namespace,
+    *,
+    expected_period: str | None = None,
+    expected_title: str = "",
+) -> tuple[list[dict], list[str]]:
     html_text = fetch_text(url)
     result = parse_article(html_text, url)
-    return result.records, result.warnings
+    warnings = list(result.warnings)
+    if expected_period and result.period != expected_period:
+        for record in result.records:
+            record["period"] = expected_period
+            record["table_name"] = str(record["table_name"]).replace(result.period, expected_period, 1)
+        warnings.append(f"详情页推断月份 {result.period} 与搜索结果 {expected_period} 不一致，已按搜索结果校准")
+    if expected_title:
+        for record in result.records:
+            if not record.get("title"):
+                record["title"] = expected_title
+    return result.records, warnings
 
 
 def fetch_history_candidates(
@@ -721,7 +737,12 @@ def fetch_history_candidates(
         for candidate in candidates[period]:
             print(f"抓取 {period} {candidate.url}", flush=True)
             try:
-                records, warnings = fetch_and_parse_url(candidate.url, args)
+                records, warnings = fetch_and_parse_url(
+                    candidate.url,
+                    args,
+                    expected_period=candidate.period,
+                    expected_title=candidate.title,
+                )
                 print(f"解析 {len(records)} 条长表记录", flush=True)
             except Exception as exc:
                 all_warnings.append(f"{candidate.url}: 抓取或解析失败：{exc}")
