@@ -1121,7 +1121,7 @@ with st.expander(view_title, expanded=True):
     with tier_col:
         st.markdown('<div class="chart-title compact">城市层级对比</div>', unsafe_allow_html=True)
         tier_summary = (
-            filtered.groupby("city_tier", as_index=False)
+            filtered.groupby("city_tier", as_index=False, observed=True)
             .agg(
                 avg_change=("change_pct", "mean"),
                 min_change=("change_pct", "min"),
@@ -1133,7 +1133,10 @@ with st.expander(view_title, expanded=True):
             )
         )
         tier_order = ["一线", "二线", "三线", "未分层"]
-        tier_summary["tier_order"] = tier_summary["city_tier"].map({tier: index for index, tier in enumerate(tier_order)}).fillna(99)
+        tier_rank = {tier: index for index, tier in enumerate(tier_order)}
+        tier_summary["tier_order"] = (
+            tier_summary["city_tier"].astype("string").map(tier_rank).fillna(99).astype(int)
+        )
         tier_summary = tier_summary.sort_values(["tier_order", "city_tier"])
         visible_tier_order = [tier for tier in tier_order if tier in set(tier_summary["city_tier"])]
         tier_y_map = {tier: len(visible_tier_order) - index - 1 for index, tier in enumerate(visible_tier_order)}
