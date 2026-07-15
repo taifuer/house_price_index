@@ -1,16 +1,20 @@
 # 全国 70 城商品住宅价格指数
 
-一个基于国家统计局“70 个大中城市商品住宅销售价格变动情况”的数据获取与交互式看板项目。项目将月度房价指数整理为长表 CSV，并用 Streamlit 展示城市排名、涨跌分布、城市层级对比、长期趋势和补充国际指标。
+一个基于国家统计局“70 个大中城市商品住宅销售价格变动情况”的数据获取与交互式看板项目。项目将月度房价指数整理为长表 CSV，并用 Streamlit 展示城市排名、涨跌分布、城市层级对比和长期趋势。
 
-看板默认展示最新月份的二手住宅环比数据，支持切换月份、住宅类型、面积段和指标。除 70 城房价指数外，项目还提供 BIS 国际住宅价格指数和 UN WPP/官方最新人口动态数据，便于从国际住房价格和人口变化两个背景维度辅助观察。
+看板默认展示最新月份的二手住宅环比数据，支持切换月份、住宅类型、面积段和指标。整体趋势可在 70 城总量与一二三线城市分层占比之间切换，用统一口径观察不同城市层级的市场分化。
 
 数据解析优先读取国家统计局详情页 HTML 文本；历史页面结构不一致时，会按搜索 API 候选 URL 重试并保留最佳解析结果。增量更新模式只抓取已发布的新月份，避免猜测或反复请求不存在的详情页。
 
 ## 效果演示
 
-概览与趋势看板：
+最新月份概览：
 
 ![](./demo/overview.png)
+
+一二三线城市分层趋势：
+
+![](./demo/tier-trend.png)
 
 侧边栏筛选与数据说明：
 
@@ -21,11 +25,11 @@
 ```text
 .
 ├── app.py                                  # Streamlit 可视化应用
+├── dashboard_trends.py                     # 总体与分层趋势数据聚合
 ├── .streamlit/config.toml                  # Streamlit 本地展示配置
 ├── assets/favicon.ico                      # 房屋 favicon
 ├── scripts/fetch_stats.py                  # 数据获取、解析、导出 CLI
-├── scripts/fetch_context_data.py           # BIS 国际住宅价格指数获取 CLI
-├── scripts/fetch_demography_data.py         # UN WPP 国际人口动态数据获取 CLI
+├── tests/                                   # 数据聚合与抓取回归测试
 ├── data/
 │   └── house_price_index_all.csv.gz        # 全历史长表数据（gzip 压缩 CSV）
 ├── requirements.txt
@@ -64,7 +68,7 @@ python3 scripts/fetch_stats.py \
 
 ```bash
 python3 scripts/fetch_stats.py \
-  --url "https://www.stats.gov.cn/sj/zxfb/202605/t20260518_1963715.html" \
+  --url "https://www.stats.gov.cn/xxgk/sjfb/zxfb2020/202607/t20260715_1964115.html" \
   --out data/house_price_index.csv
 ```
 
@@ -76,22 +80,6 @@ python3 scripts/fetch_stats.py \
   --max-search-pages 1 \
   --out data/house_price_index_sample_history.csv
 ```
-
-获取国际住宅价格指数：
-
-```bash
-python3 scripts/fetch_context_data.py
-```
-
-该命令会生成 `data/context_bis_prices.csv.gz`，数据来源为 BIS 公开批量数据。
-
-获取国际人口动态数据：
-
-```bash
-python3 scripts/fetch_demography_data.py
-```
-
-该命令默认下载 UN World Population Prospects 2024 的公开 compact Excel，生成 `data/context_demography_countries.csv.gz` 和 `data/context_demography_sources.json`。默认覆盖中国、美国、日本、韩国、英国、德国的 `1990-2025` 年数据，其中 `1990-2023` 来自 Estimates 历史估计，`2024-2025` 先使用公开官方最新发布值覆盖，未覆盖的国家、年份或指标继续使用 Medium variant 中位方案预测。当前官方覆盖包括国家统计局中国 `2024-2025` 年度人口数据和 Destatis 德国 `2024` 年出生死亡长期序列。指标包括人口、出生人口、死亡人口、自然增长人口、净迁移人口、人口变化、出生率、死亡率和自然增长率。
 
 ## 启动可视化
 
@@ -121,9 +109,7 @@ streamlit run app.py --server.port 8502 --server.address 0.0.0.0
 
 - 城市排名：按变动幅度排序，并可在图内切换全部、一线、二线、三线城市。
 - 首尾城市对比、城市涨跌分布、城市层级对比：展示极值、分布和一二三线城市的范围、均值、数量。
-- 价格趋势：同时展示整体趋势和城市趋势。整体趋势用发散堆叠柱显示每月上涨、持平、下跌城市数，并在左上角标注颜色图例；城市趋势展示选中城市的长期折线。
-- 补充指标：展示 BIS 国际住宅价格指数；对应数据文件不存在或为空时自动隐藏。
-- 国际人口动态：如果存在 `data/context_demography_countries.csv.gz`，展示主要国家人口、出生、死亡、自然增长、净迁移等长期变化。
+- 价格趋势：同时展示整体趋势和城市趋势，默认显示近 10 年数据。整体趋势默认用发散堆叠柱显示每月上涨、持平、下跌城市数，也可切换为一二三线城市的层级内涨跌占比；城市趋势展示选中城市的长期折线。
 
 历史数据存在部分月份或表格缺失。趋势图会保留完整年份刻度；城市趋势会保留完整月份序列，缺失月份不显示数据点，但前后真实观测点保持连接。图下方出现 `* 部分数据缺失` 或 `* 部分月份数据缺失` 时，应结合 tooltip 中的覆盖城市数解读。
 
@@ -131,9 +117,9 @@ streamlit run app.py --server.port 8502 --server.address 0.0.0.0
 
 当前已生成的全历史文件包含：
 
-- `167,224` 条长表记录
-- `159` 个有数据月份
-- 时间范围：`2011-02` 至 `2026-05`
+- `168,904` 条长表记录
+- `160` 个有数据月份
+- 时间范围：`2011-02` 至 `2026-06`
 
 注意：早期历史页面和现代页面的表格结构不同。2011-2018 年部分月份只发布表 1/2，或国家统计局迁移索引中存在失效链接，因此不是所有月份都有现代格式的表 1-4 完整记录。可按 `period`、`table_no` 和 `source_url` 聚合 `data/house_price_index_all.csv.gz` 查看每个月的记录数、表号覆盖和来源 URL。
 
@@ -157,7 +143,8 @@ period,table_no,table_name,house_type,size_band,city,metric,base,value,change_pc
 ## 开发检查
 
 ```bash
-python3 -m py_compile scripts/fetch_stats.py scripts/fetch_context_data.py scripts/fetch_demography_data.py app.py
+python3 -m py_compile scripts/fetch_stats.py dashboard_trends.py app.py
+python3 -m unittest discover -s tests
 ```
 
 修改解析逻辑后，建议至少验证一个现代详情页和一个旧迁移页。

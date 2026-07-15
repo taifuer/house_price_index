@@ -10,14 +10,14 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
 
+from dashboard_trends import TREND_TIERS, build_overall_trend, build_tier_trend
+
 
 DATA_PATH = Path("data/house_price_index_all.csv.gz")
 if not DATA_PATH.exists():
     DATA_PATH = Path("data/house_price_index_all.csv")
 if not DATA_PATH.exists():
     DATA_PATH = Path("data/house_price_index.csv")
-INTERNATIONAL_CONTEXT_PATH = Path("data/context_bis_prices.csv.gz")
-DEMOGRAPHY_CONTEXT_PATH = Path("data/context_demography_countries.csv.gz")
 FAVICON_PATH = Path("assets/favicon.ico")
 MOBILE_BREAKPOINT_PX = 768
 
@@ -54,7 +54,7 @@ SIZE_BAND_ORDER = ["全部", "90m2及以下", "90-144m2", "144m2以上"]
 METRIC_ORDER = ["环比", "同比", "累计平均"]
 RANK_TIER_OPTIONS = ["全部", "一线", "二线", "三线"]
 RANK_MOBILE_WINDOW = 10
-TREND_DEFAULT_YEARS = 5
+TREND_DEFAULT_YEARS = 10
 DATA_CATEGORY_COLUMNS = [
     "table_name",
     "house_type",
@@ -78,14 +78,6 @@ CHANGE_COLORSCALE = [
     [0.5, MISSING_COLOR],
     [1, UP_COLOR],
 ]
-COUNTRY_COLOR_MAP = {
-    "中国": UP_COLOR,
-    "美国": DOWN_COLOR,
-    "日本": "#12b76a",
-    "韩国": "#7f56d9",
-    "英国": "#f79009",
-    "德国": "#475467",
-}
 # 国家统计局 70 个大中城市一二三线城市划分口径。
 TIER_MAP = {
     "北京": "一线",
@@ -175,14 +167,6 @@ def load_data(path: Path, mtime_ns: int) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(max_entries=4)
-def load_optional_csv(path: Path, mtime_ns: int) -> pd.DataFrame:
-    del mtime_ns
-    if not path.exists():
-        return pd.DataFrame()
-    return pd.read_csv(path)
-
-
 def file_mtime_ns(path: Path) -> int:
     return path.stat().st_mtime_ns if path.exists() else 0
 
@@ -236,6 +220,7 @@ def add_time_range_buttons(
     periods: list[str] | pd.Series,
     periods_per_year: int = 12,
     active_index: int = 0,
+    xaxis_count: int = 1,
 ) -> None:
     ordered_periods = sorted(pd.Series(periods).dropna().astype(str).unique())
     if len(ordered_periods) < 2:
@@ -264,7 +249,13 @@ def add_time_range_buttons(
                     {
                         "label": label,
                         "method": "relayout",
-                        "args": [{"xaxis.range": category_axis_range(ordered_periods, count)}],
+                        "args": [
+                            {
+                                ("xaxis.range" if axis_index == 1 else f"xaxis{axis_index}.range"):
+                                category_axis_range(ordered_periods, count)
+                                for axis_index in range(1, xaxis_count + 1)
+                            }
+                        ],
                     }
                     for label, count in button_specs
                 ],
@@ -343,8 +334,6 @@ if not DATA_PATH.exists():
     st.stop()
 
 data = load_data(DATA_PATH, file_mtime_ns(DATA_PATH))
-international_context = load_optional_csv(INTERNATIONAL_CONTEXT_PATH, file_mtime_ns(INTERNATIONAL_CONTEXT_PATH))
-demography_context = load_optional_csv(DEMOGRAPHY_CONTEXT_PATH, file_mtime_ns(DEMOGRAPHY_CONTEXT_PATH))
 
 periods = sorted(data["period"].unique(), reverse=True)
 house_types = ordered_values(data["house_type"], ["新建商品住宅", "二手住宅"])
@@ -366,12 +355,6 @@ with st.sidebar:
     st.divider()
     with st.expander("数据范围"):
         st.caption(f"70 城：{format_period_label(data['period'].min())} 至 {format_period_label(data['period'].max())}")
-        if not international_context.empty:
-            st.caption(
-                f"BIS：{international_context['period'].min()} 至 {international_context['period'].max()}"
-            )
-        if not demography_context.empty:
-            st.caption(f"人口动态：{demography_context['year'].min()} 至 {demography_context['year'].max()}")
     with st.expander("指标说明"):
         st.caption("环比：上月=100")
         st.caption("同比：上年同月=100")
@@ -442,13 +425,14 @@ st.markdown(
         display: block;
         font-size: 1.5rem;
         font-weight: 700;
-        left: 4rem;
+        left: calc(4rem + var(--app-sidebar-width, 0px));
         line-height: 1.1;
-        max-width: calc(100vw - 8rem);
+        max-width: calc(100vw - var(--app-sidebar-width, 0px) - 8rem);
         overflow: hidden;
         position: fixed;
         text-overflow: ellipsis;
         top: 1.75rem;
+        transition: left 80ms linear, max-width 80ms linear;
         transform: translateY(-50%);
         white-space: nowrap;
         z-index: 999990;
@@ -457,13 +441,6 @@ st.markdown(
     .app-header-link:hover,
     .app-header-link:focus {{
         color: #1d4ed8 !important;
-    }}
-
-    @media (min-width: 901px) {{
-        body:has([data-testid="stSidebar"][aria-expanded="true"]) .app-header-link {{
-            left: 25rem;
-            max-width: calc(100vw - 29rem);
-        }}
     }}
 
     .block-container {{
@@ -507,6 +484,7 @@ st.markdown(
         background: transparent !important;
         border: 0 !important;
         box-shadow: none !important;
+        position: relative;
     }}
 
     .block-container [data-testid="stExpander"] summary {{
@@ -524,10 +502,18 @@ st.markdown(
 
     .block-container [data-testid="stExpander"] summary p {{
         color: #111827 !important;
+        flex: 0 1 auto !important;
         font-size: 1.25rem !important;
         font-weight: 650 !important;
         letter-spacing: 0 !important;
         line-height: 1.3 !important;
+        margin: 0 !important;
+    }}
+
+    .block-container [data-testid="stExpander"] summary [data-testid="stMarkdownContainer"] {{
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
     }}
 
     .block-container [data-testid="stExpander"] [data-testid="stExpanderToggleIcon"] {{
@@ -572,7 +558,19 @@ st.markdown(
     }}
 
     .section-source-link {{
-        margin-bottom: 0.35rem;
+        margin-left: 0.3rem;
+        position: static;
+        z-index: 2;
+    }}
+
+    .element-container:has(.source-link-placeholder),
+    [data-testid="stElementContainer"]:has(.source-link-placeholder),
+    [data-testid="stMarkdownContainer"]:has(.source-link-placeholder) {{
+        height: 0 !important;
+        margin: 0 !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+        padding: 0 !important;
     }}
 
     .trend-note {{
@@ -601,12 +599,13 @@ st.markdown(
     }}
 
     .scroll-jump {{
-        bottom: 1.85rem;
+        bottom: calc(1.85rem + var(--app-footer-overlap, 0px));
         display: flex;
         flex-direction: column;
         gap: 0.45rem;
         position: fixed;
         right: 1.05rem;
+        transition: bottom 120ms ease-out;
         z-index: 999991;
     }}
 
@@ -730,7 +729,7 @@ st.markdown(
         }}
 
         .scroll-jump {{
-            bottom: 1.35rem;
+            bottom: calc(1.35rem + var(--app-footer-overlap, 0px));
             right: 0.75rem;
         }}
 
@@ -742,6 +741,123 @@ st.markdown(
     </style>
     """,
     unsafe_allow_html=True,
+)
+
+st.html(
+    """
+    <script>
+    (() => {
+        const hostWindow = window.parent && window.parent !== window ? window.parent : window;
+        const doc = hostWindow.document;
+        const root = doc.documentElement;
+
+        if (hostWindow.__housePriceLayoutCleanup) {
+            hostWindow.__housePriceLayoutCleanup();
+        }
+
+        const sidebar = doc.querySelector('[data-testid="stSidebar"]');
+        let sidebarResizeObserver = null;
+        let sidebarMutationObserver = null;
+        const syncSidebarWidth = () => {
+            if (!sidebar) {
+                root.style.setProperty("--app-sidebar-width", "0px");
+                return;
+            }
+            const rect = sidebar.getBoundingClientRect();
+            const expanded = sidebar.getAttribute("aria-expanded") !== "false" && rect.right > 0;
+            root.style.setProperty("--app-sidebar-width", `${expanded ? rect.width : 0}px`);
+        };
+
+        if (sidebar) {
+            sidebarResizeObserver = new hostWindow.ResizeObserver(syncSidebarWidth);
+            sidebarResizeObserver.observe(sidebar);
+            sidebarMutationObserver = new hostWindow.MutationObserver(syncSidebarWidth);
+            sidebarMutationObserver.observe(sidebar, {
+                attributes: true,
+                attributeFilter: ["aria-expanded", "style", "class"],
+            });
+            syncSidebarWidth();
+        }
+
+        let sourceAttachTimer = 0;
+        let sourceAttachAttempts = 0;
+        const attachSourceLink = () => {
+            const link = doc.querySelector("#overview-source-link");
+            const expander = link?.closest('[data-testid="stExpander"]');
+            const title = expander?.querySelector("summary p");
+            if (link && title) {
+                title.insertAdjacentElement("afterend", link);
+                if (!link.dataset.stopSummaryToggle) {
+                    link.addEventListener("click", (event) => event.stopPropagation());
+                    link.dataset.stopSummaryToggle = "true";
+                }
+                return;
+            }
+            sourceAttachAttempts += 1;
+            if (sourceAttachAttempts < 50) {
+                sourceAttachTimer = hostWindow.setTimeout(attachSourceLink, 100);
+            }
+        };
+        attachSourceLink();
+
+        let footer = null;
+        let footerResizeObserver = null;
+        let footerAttachTimer = 0;
+        let footerAttachAttempts = 0;
+        let frameId = 0;
+        const syncFooterOverlap = () => {
+            frameId = 0;
+            if (!footer) {
+                root.style.setProperty("--app-footer-overlap", "0px");
+                return;
+            }
+            const rect = footer.getBoundingClientRect();
+            const overlap = Math.max(0, hostWindow.innerHeight - rect.top + 12);
+            root.style.setProperty("--app-footer-overlap", `${overlap}px`);
+        };
+        const scheduleFooterSync = () => {
+            if (!frameId) {
+                frameId = hostWindow.requestAnimationFrame(syncFooterOverlap);
+            }
+        };
+
+        const attachFooter = () => {
+            footer = doc.querySelector("#app-bottom");
+            if (footer) {
+                footerResizeObserver = new hostWindow.ResizeObserver(scheduleFooterSync);
+                footerResizeObserver.observe(footer);
+                syncFooterOverlap();
+                return;
+            }
+            footerAttachAttempts += 1;
+            if (footerAttachAttempts < 50) {
+                footerAttachTimer = hostWindow.setTimeout(attachFooter, 100);
+            }
+        };
+        hostWindow.addEventListener("scroll", scheduleFooterSync, { passive: true });
+        hostWindow.addEventListener("resize", scheduleFooterSync, { passive: true });
+        attachFooter();
+
+        hostWindow.__housePriceLayoutCleanup = () => {
+            sidebarResizeObserver?.disconnect();
+            sidebarMutationObserver?.disconnect();
+            if (sourceAttachTimer) {
+                hostWindow.clearTimeout(sourceAttachTimer);
+            }
+            footerResizeObserver?.disconnect();
+            if (footerAttachTimer) {
+                hostWindow.clearTimeout(footerAttachTimer);
+            }
+            hostWindow.removeEventListener("scroll", scheduleFooterSync);
+            hostWindow.removeEventListener("resize", scheduleFooterSync);
+            if (frameId) {
+                hostWindow.cancelAnimationFrame(frameId);
+            }
+        };
+    })();
+    </script>
+    """,
+    unsafe_allow_javascript=True,
 )
 
 st.markdown(
@@ -772,13 +888,14 @@ st.markdown(
 with st.expander(view_title, expanded=True):
     st.markdown(
         f"""
-        <a class="source-link section-source-link" href="{html.escape(source, quote=True)}" target="_blank" rel="noopener noreferrer" title="查看国家统计局原文" aria-label="查看国家统计局原文">
+        <a id="overview-source-link" class="source-link section-source-link" href="{html.escape(source, quote=True)}" target="_blank" rel="noopener noreferrer" title="查看国家统计局原文" aria-label="查看国家统计局原文">
             <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M15 3h6v6"></path>
                 <path d="M10 14 21 3"></path>
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
             </svg>
         </a>
+        <span class="source-link-placeholder"></span>
         """,
         unsafe_allow_html=True,
     )
@@ -791,16 +908,18 @@ with st.expander(view_title, expanded=True):
     flat_count = int((filtered["change_pct"] == 0).sum())
     down_count = int((filtered["change_pct"] < 0).sum())
     avg_change = filtered["change_pct"].mean()
+    median_change = filtered["change_pct"].median()
     max_row = filtered.loc[filtered["change_pct"].idxmax()]
     min_row = filtered.loc[filtered["change_pct"].idxmin()]
 
-    summary_cols = st.columns(6)
+    summary_cols = st.columns(7)
     summary_cols[0].metric("覆盖城市", city_count)
     summary_cols[1].metric("上涨", up_count)
     summary_cols[2].metric("持平", flat_count)
     summary_cols[3].metric("下降", down_count)
     summary_cols[4].metric("均值", format_pct(avg_change))
-    summary_cols[5].metric("区间", f"{format_pct(min_row['change_pct'])} ~ {format_pct(max_row['change_pct'])}")
+    summary_cols[5].metric("中位数", format_pct(median_change))
+    summary_cols[6].metric("区间", f"{format_pct(min_row['change_pct'])} ~ {format_pct(max_row['change_pct'])}")
 
     rank_color_limit = max(abs(filtered["change_pct"].min()), abs(filtered["change_pct"].max()), 0.1)
     rank_tier_options = ["全部"] + [tier for tier in RANK_TIER_OPTIONS[1:] if tier in set(filtered["city_tier"])]
@@ -1240,93 +1359,158 @@ with st.expander(f"价格趋势 · {house_type} · {size_band_label} · {metric}
 
     if not overall_trend.empty:
         st.markdown('<div class="chart-title">整体趋势</div>', unsafe_allow_html=True)
-        month_index = pd.period_range(overall_trend["period"].min(), overall_trend["period"].max(), freq="M").astype(str)
-        monthly = overall_trend.groupby("period").agg(
-            covered=("city", "nunique"),
-            up=("change_pct", lambda values: int((values > 0).sum())),
-            flat=("change_pct", lambda values: int((values == 0).sum())),
-            down=("change_pct", lambda values: int((values < 0).sum())),
-        )
-        monthly = monthly.reindex(month_index).rename_axis("period").reset_index()
-        expected_city_count = len(TIER_MAP)
-        monthly["covered_display"] = monthly["covered"].fillna(0).astype(int)
-        monthly["up_display"] = monthly["up"].fillna(0).astype(int)
-        monthly["flat_display"] = monthly["flat"].fillna(0).astype(int)
-        monthly["down_display"] = monthly["down"].fillna(0).astype(int)
-        monthly["data_status"] = monthly["covered_display"].map(
-            lambda count: "数据完整" if count == expected_city_count else "数据不完整"
-        )
-        incomplete_overall_periods = monthly.loc[monthly["covered_display"] < expected_city_count, "period"].tolist()
-        overall_customdata = monthly[
-            ["up_display", "flat_display", "down_display", "covered_display", "data_status"]
-        ].values.tolist()
-        year_tickvals, year_ticktext = period_year_ticks(monthly["period"])
+        mode_column_spec = [0.65, 1, 0.65] if is_mobile_viewport else [1, 0.34, 1]
+        _, mode_column, _ = st.columns(mode_column_spec, gap=None)
+        with mode_column:
+            trend_mode = st.segmented_control(
+                "整体趋势视图",
+                ["总体", "分层"],
+                default="总体",
+                key="overall_trend_mode",
+                label_visibility="collapsed",
+                width="stretch",
+            )
+        trend_mode = trend_mode or "总体"
+        trend_default_months = TREND_DEFAULT_YEARS * 12
+        trend_active_index = 3
 
-        fig = go.Figure()
-        fig.add_bar(
-            x=monthly["period"],
-            y=monthly["up_display"],
-            name="上涨",
-            marker_color=OVERALL_UP_COLOR,
-            customdata=overall_customdata,
-            hovertemplate=(
-                "月份 %{x}<br>上涨 %{customdata[0]}<br>持平 %{customdata[1]}<br>"
-                "下跌 %{customdata[2]}<br>覆盖城市 %{customdata[3]}/70<br>%{customdata[4]}<extra></extra>"
-            ),
-        )
-        fig.add_bar(
-            x=monthly["period"],
-            y=monthly["flat_display"],
-            name="持平",
-            marker_color=FLAT_COLOR,
-            customdata=overall_customdata,
-            hovertemplate=(
-                "月份 %{x}<br>上涨 %{customdata[0]}<br>持平 %{customdata[1]}<br>"
-                "下跌 %{customdata[2]}<br>覆盖城市 %{customdata[3]}/70<br>%{customdata[4]}<extra></extra>"
-            ),
-        )
-        fig.add_bar(
-            x=monthly["period"],
-            y=-monthly["down_display"],
-            name="下跌",
-            marker_color=OVERALL_DOWN_COLOR,
-            customdata=overall_customdata,
-            hovertemplate=(
-                "月份 %{x}<br>上涨 %{customdata[0]}<br>持平 %{customdata[1]}<br>"
-                "下跌 %{customdata[2]}<br>覆盖城市 %{customdata[3]}/70<br>%{customdata[4]}<extra></extra>"
-            ),
-        )
-        fig.add_hline(y=0, line_color=BASELINE_COLOR, line_width=1)
-        trend_default_months = TREND_DEFAULT_YEARS * 12 if is_mobile_viewport else None
-        trend_active_index = 2 if is_mobile_viewport else 0
-        fig.update_layout(
-            barmode="relative",
-            height=460,
-            margin={"l": 55, "r": 20, "t": 72, "b": 72},
-            xaxis={
-                "title": "年份",
-                "type": "category",
-                "categoryorder": "array",
-                "categoryarray": monthly["period"].tolist(),
-                "range": category_axis_range(monthly["period"], trend_default_months),
-                "tickmode": "array",
-                "tickvals": year_tickvals,
-                "ticktext": year_ticktext,
-            },
-            yaxis={
-                "title": "城市数",
-                "tickmode": "array",
-                "tickvals": [-70, -35, 0, 35, 70],
-                "ticktext": ["70", "35", "0", "35", "70"],
-                "range": [-70, 70],
-            },
-        )
-        apply_top_left_legend(fig)
-        add_time_range_buttons(fig, monthly["period"], active_index=trend_active_index)
-        render_plotly_chart(fig)
-        overall_missing_note = missing_period_note(incomplete_overall_periods, "数据不完整")
-        if overall_missing_note:
-            st.markdown(f'<div class="trend-note">{overall_missing_note}</div>', unsafe_allow_html=True)
+        if trend_mode == "总体":
+            monthly = build_overall_trend(overall_trend, len(TIER_MAP))
+            incomplete_periods = monthly.loc[monthly["data_status"] == "数据不完整", "period"].tolist()
+            overall_customdata = monthly[
+                ["up", "flat", "down", "covered", "data_status"]
+            ].values.tolist()
+            year_tickvals, year_ticktext = period_year_ticks(monthly["period"])
+
+            fig = go.Figure()
+            for direction, name, color, sign in [
+                ("up", "上涨", OVERALL_UP_COLOR, 1),
+                ("flat", "持平", FLAT_COLOR, 1),
+                ("down", "下跌", OVERALL_DOWN_COLOR, -1),
+            ]:
+                fig.add_bar(
+                    x=monthly["period"],
+                    y=sign * monthly[direction],
+                    name=name,
+                    marker_color=color,
+                    customdata=overall_customdata,
+                    hovertemplate=(
+                        "月份 %{x}<br>上涨 %{customdata[0]}<br>持平 %{customdata[1]}<br>"
+                        "下跌 %{customdata[2]}<br>覆盖城市 %{customdata[3]}/70<br>"
+                        "%{customdata[4]}<extra></extra>"
+                    ),
+                )
+            fig.add_hline(y=0, line_color=BASELINE_COLOR, line_width=1)
+            fig.update_layout(
+                barmode="relative",
+                height=460,
+                margin={"l": 55, "r": 20, "t": 72, "b": 72},
+                xaxis={
+                    "title": "年份",
+                    "type": "category",
+                    "categoryorder": "array",
+                    "categoryarray": monthly["period"].tolist(),
+                    "range": category_axis_range(monthly["period"], trend_default_months),
+                    "tickmode": "array",
+                    "tickvals": year_tickvals,
+                    "ticktext": year_ticktext,
+                },
+                yaxis={
+                    "title": "城市数",
+                    "tickmode": "array",
+                    "tickvals": [-70, -35, 0, 35, 70],
+                    "ticktext": ["70", "35", "0", "35", "70"],
+                    "range": [-70, 70],
+                },
+            )
+            apply_top_left_legend(fig)
+            add_time_range_buttons(fig, monthly["period"], active_index=trend_active_index)
+            render_plotly_chart(fig)
+            missing_note = missing_period_note(incomplete_periods, "数据不完整")
+        else:
+            expected_tier_counts = pd.Series(TIER_MAP).value_counts().to_dict()
+            tier_monthly = build_tier_trend(overall_trend, expected_tier_counts)
+            visible_tiers = [tier for tier in TREND_TIERS if tier in set(tier_monthly["city_tier"])]
+            tier_periods = sorted(tier_monthly["period"].unique())
+            year_tickvals, year_ticktext = period_year_ticks(tier_periods)
+            fig = make_subplots(
+                rows=len(visible_tiers),
+                cols=1,
+                vertical_spacing=0.09,
+                subplot_titles=[f"{tier}（{expected_tier_counts[tier]} 城）" for tier in visible_tiers],
+            )
+            for row_index, tier in enumerate(visible_tiers, start=1):
+                tier_view = tier_monthly[tier_monthly["city_tier"] == tier]
+                tier_customdata = tier_view[
+                    ["up", "flat", "down", "covered", "expected", "data_status"]
+                ].values.tolist()
+                for direction, name, color, sign in [
+                    ("up", "上涨", OVERALL_UP_COLOR, 1),
+                    ("flat", "持平", FLAT_COLOR, 1),
+                    ("down", "下跌", OVERALL_DOWN_COLOR, -1),
+                ]:
+                    fig.add_bar(
+                        x=tier_view["period"],
+                        y=sign * tier_view[f"{direction}_pct"],
+                        name=name,
+                        legendgroup=direction,
+                        showlegend=row_index == 1,
+                        marker_color=color,
+                        customdata=tier_customdata,
+                        hovertemplate=(
+                            f"{tier}<br>月份 %{{x}}<br>上涨 %{{customdata[0]}} 城<br>"
+                            "持平 %{customdata[1]} 城<br>下跌 %{customdata[2]} 城<br>"
+                            "覆盖城市 %{customdata[3]}/%{customdata[4]}<br>"
+                            "%{customdata[5]}<extra></extra>"
+                        ),
+                        row=row_index,
+                        col=1,
+                    )
+                fig.add_hline(y=0, line_color=BASELINE_COLOR, line_width=1, row=row_index, col=1)
+                fig.update_xaxes(
+                    type="category",
+                    categoryorder="array",
+                    categoryarray=tier_periods,
+                    range=category_axis_range(tier_periods, trend_default_months),
+                    tickmode="array",
+                    tickvals=year_tickvals,
+                    ticktext=year_ticktext,
+                    showticklabels=row_index == len(visible_tiers),
+                    title="年份" if row_index == len(visible_tiers) else "",
+                    row=row_index,
+                    col=1,
+                )
+                fig.update_yaxes(
+                    title="层级内占比" if row_index == 2 else "",
+                    tickmode="array",
+                    tickvals=[-100, -50, 0, 50, 100],
+                    ticktext=["100%", "50%", "0", "50%", "100%"],
+                    range=[-100, 100],
+                    row=row_index,
+                    col=1,
+                )
+            fig.update_layout(
+                barmode="relative",
+                height=680,
+                margin={"l": 65, "r": 20, "t": 82, "b": 72},
+            )
+            apply_top_left_legend(fig)
+            add_time_range_buttons(
+                fig,
+                tier_periods,
+                active_index=trend_active_index,
+                xaxis_count=len(visible_tiers),
+            )
+            render_plotly_chart(fig)
+            incomplete_periods = (
+                tier_monthly.loc[tier_monthly["data_status"] == "数据不完整", "period"]
+                .drop_duplicates()
+                .tolist()
+            )
+            missing_note = missing_period_note(incomplete_periods, "分层数据不完整")
+
+        if missing_note:
+            st.markdown(f'<div class="trend-note">{missing_note}</div>', unsafe_allow_html=True)
 
     cities = sorted(data["city"].unique())
     default_cities = [city for city in ["北京", "上海", "广州", "深圳"] if city in cities]
@@ -1363,8 +1547,8 @@ with st.expander(f"价格趋势 · {house_type} · {size_band_label} · {metric}
             labels={"period": "年份", "change_pct": "较基期变动", "city": "城市"},
         )
         fig.add_hline(y=0, line_color=BASELINE_COLOR, line_width=1)
-        trend_default_months = TREND_DEFAULT_YEARS * 12 if is_mobile_viewport else None
-        trend_active_index = 2 if is_mobile_viewport else 0
+        trend_default_months = TREND_DEFAULT_YEARS * 12
+        trend_active_index = 3
         fig.update_layout(
             height=440,
             margin={"l": 55, "r": 20, "t": 86, "b": 72},
@@ -1389,243 +1573,11 @@ with st.expander(f"价格趋势 · {house_type} · {size_band_label} · {metric}
         if trend_missing_note:
             st.markdown(f'<div class="trend-note">{trend_missing_note}</div>', unsafe_allow_html=True)
 
-if not international_context.empty:
-    with st.expander("国际住宅价格指数", expanded=True):
-        international_context["value"] = pd.to_numeric(international_context["value"], errors="coerce")
-        default_countries = [country for country in ["中国", "美国", "日本", "韩国"] if country in set(international_context["country"])]
-        selected_countries = st.multiselect(
-            "国际对比国家",
-            sorted(international_context["country"].unique()),
-            default=default_countries,
-            label_visibility="collapsed",
-        )
-        international_view = international_context[international_context["country"].isin(selected_countries)].copy()
-        if not international_view.empty:
-            international_periods = sorted(international_view["period"].dropna().astype(str).unique())
-            year_tickvals, year_ticktext = period_year_ticks(international_periods)
-            fig = px.line(
-                international_view.sort_values(["country", "period"]),
-                x="period",
-                y="value",
-                color="country",
-                markers=True,
-                color_discrete_map=COUNTRY_COLOR_MAP,
-                labels={"period": "年度", "value": "指数", "country": "国家"},
-            )
-            fig.update_traces(
-                hovertemplate="国家 %{fullData.name}<br>季度 %{x}<br>指数 %{y:.1f}<extra></extra>"
-            )
-            international_default_quarters = TREND_DEFAULT_YEARS * 4 if is_mobile_viewport else None
-            trend_active_index = 2 if is_mobile_viewport else 0
-            fig.update_layout(
-                height=430,
-                margin={"l": 55, "r": 20, "t": 86, "b": 60},
-                xaxis={
-                    "title": "年度",
-                    "type": "category",
-                    "categoryorder": "array",
-                    "categoryarray": international_periods,
-                    "range": category_axis_range(international_periods, international_default_quarters),
-                    "tickmode": "array",
-                    "tickvals": year_tickvals,
-                    "ticktext": year_ticktext,
-                },
-            )
-            apply_top_left_legend(fig)
-            add_time_range_buttons(fig, international_periods, periods_per_year=4, active_index=trend_active_index)
-            render_plotly_chart(fig)
-            st.markdown('<div class="trend-note">* BIS 名义住宅价格指数，2010=100</div>', unsafe_allow_html=True)
-
-if not demography_context.empty:
-    demography_context = demography_context.copy()
-    demography_context["year"] = demography_context["year"].astype(str)
-    demography_context["value"] = pd.to_numeric(demography_context["value"], errors="coerce")
-    demography_context = demography_context.dropna(subset=["value"])
-    for text_column in ["series_type", "source", "source_note"]:
-        if text_column not in demography_context.columns:
-            demography_context[text_column] = ""
-        demography_context[text_column] = demography_context[text_column].fillna("").astype(str)
-
-if not demography_context.empty:
-    with st.expander("国际人口动态", expanded=False):
-        has_demography_series_type = "series_type" in demography_context.columns
-        default_demography_countries = [
-            country for country in ["中国", "美国", "日本", "韩国"] if country in set(demography_context["country"])
-        ]
-        selected_demography_countries = st.multiselect(
-            "人口动态国家",
-            sorted(demography_context["country"].unique()),
-            default=default_demography_countries,
-            label_visibility="collapsed",
-        )
-        demography_metrics = ordered_values(
-            demography_context["metric"],
-            ["出生人口", "自然增长人口", "人口", "死亡人口", "净迁移人口", "人口变化", "出生率", "死亡率", "自然增长率"],
-        )
-        default_demography_metric_index = demography_metrics.index("出生人口") if "出生人口" in demography_metrics else 0
-        selected_demography_metric = st.selectbox(
-            "人口动态指标",
-            demography_metrics,
-            index=default_demography_metric_index,
-        )
-        demography_metric_view = demography_context[
-            (demography_context["country"].isin(selected_demography_countries))
-            & (demography_context["metric"] == selected_demography_metric)
-        ].copy()
-
-        if selected_demography_countries and not demography_metric_view.empty:
-            demography_unit = demography_metric_view["unit"].dropna().iloc[0]
-            demography_periods = sorted(demography_metric_view["year"].dropna().astype(str).unique())
-            year_tickvals, year_ticktext = period_year_ticks(demography_periods)
-            line_custom_data = ["series_type", "source"] if has_demography_series_type else None
-            fig = px.line(
-                demography_metric_view.sort_values(["country", "year"]),
-                x="year",
-                y="value",
-                color="country",
-                markers=True,
-                custom_data=line_custom_data,
-                color_discrete_map=COUNTRY_COLOR_MAP,
-                labels={"year": "年份", "value": f"{selected_demography_metric}（{demography_unit}）", "country": "国家"},
-            )
-            fig.add_hline(y=0, line_color=BASELINE_COLOR, line_width=1)
-            line_series_note = "<br>口径 %{customdata[0]}<br>来源 %{customdata[1]}" if has_demography_series_type else ""
-            fig.update_traces(
-                hovertemplate=(
-                    "国家 %{fullData.name}<br>"
-                    f"年份 %{{x}}<br>{selected_demography_metric} %{{y:.1f}}{demography_unit}"
-                    f"{line_series_note}<extra></extra>"
-                )
-            )
-            demography_default_years = TREND_DEFAULT_YEARS if is_mobile_viewport else None
-            trend_active_index = 2 if is_mobile_viewport else 0
-            fig.update_layout(
-                height=430,
-                margin={"l": 55, "r": 20, "t": 86, "b": 60},
-                xaxis={
-                    "title": "年份",
-                    "type": "category",
-                    "categoryorder": "array",
-                    "categoryarray": demography_periods,
-                    "range": category_axis_range(demography_periods, demography_default_years),
-                    "tickmode": "array",
-                    "tickvals": year_tickvals,
-                    "ticktext": year_ticktext,
-                },
-            )
-            apply_top_left_legend(fig)
-            add_time_range_buttons(fig, demography_periods, periods_per_year=1, active_index=trend_active_index)
-            render_plotly_chart(fig)
-
-        flow_metrics = ["出生人口", "死亡人口", "净迁移人口"]
-        flow_view = demography_context[
-            (demography_context["country"].isin(selected_demography_countries))
-            & (demography_context["metric"].isin(flow_metrics))
-        ].copy()
-        if selected_demography_countries and not flow_view.empty:
-            st.markdown('<div class="chart-title">出生、死亡与净迁移</div>', unsafe_allow_html=True)
-            flow_view["signed_value"] = flow_view.apply(
-                lambda row: -row["value"] if row["metric"] == "死亡人口" else row["value"],
-                axis=1,
-            )
-            flow_view["display_value"] = flow_view["value"]
-            flow_periods = sorted(flow_view["year"].dropna().astype(str).unique())
-            year_tickvals, year_ticktext = period_year_ticks(flow_periods)
-            flow_custom_data = ["display_value"]
-            if has_demography_series_type:
-                flow_custom_data.extend(["series_type", "source"])
-            fig = px.bar(
-                flow_view.sort_values(["country", "year", "metric"]),
-                x="year",
-                y="signed_value",
-                color="metric",
-                facet_row="country",
-                custom_data=flow_custom_data,
-                color_discrete_map={
-                    "出生人口": OVERALL_UP_COLOR,
-                    "死亡人口": OVERALL_DOWN_COLOR,
-                    "净迁移人口": "#12b76a",
-                },
-                labels={"year": "年份", "signed_value": "人口（万人）", "metric": "指标"},
-            )
-            fig.add_hline(y=0, line_color=BASELINE_COLOR, line_width=1)
-            flow_series_note = "<br>口径 %{customdata[1]}<br>来源 %{customdata[2]}" if has_demography_series_type else ""
-            fig.update_traces(
-                hovertemplate=f"年份 %{{x}}<br>%{{fullData.name}} %{{customdata[0]:.1f}}万人{flow_series_note}<extra></extra>",
-            )
-            fig.update_layout(
-                barmode="relative",
-                height=max(420, 170 * len(selected_demography_countries)),
-                margin={"l": 55, "r": 20, "t": 86, "b": 60},
-                xaxis={
-                    "title": "年份",
-                    "type": "category",
-                    "categoryorder": "array",
-                    "categoryarray": flow_periods,
-                    "tickmode": "array",
-                    "tickvals": year_tickvals,
-                    "ticktext": year_ticktext,
-                },
-            )
-            fig.update_xaxes(
-                type="category",
-                categoryorder="array",
-                categoryarray=flow_periods,
-                tickmode="array",
-                tickvals=year_tickvals,
-                ticktext=year_ticktext,
-                matches=None,
-            )
-            fig.update_yaxes(matches=None)
-            fig.for_each_annotation(lambda annotation: annotation.update(text=annotation.text.split("=")[-1]))
-            apply_top_left_legend(fig)
-            render_plotly_chart(fig)
-
-        demography_sources = "、".join(sorted(item for item in demography_context["source"].dropna().unique() if item))
-        wpp_source_urls = demography_context.loc[
-            demography_context["source"] == "UN WPP 2024", "source_url"
-        ].dropna()
-        demography_source_url = (
-            wpp_source_urls.iloc[0] if not wpp_source_urls.empty else demography_context["source_url"].dropna().iloc[0]
-        )
-        series_note = ""
-        if has_demography_series_type:
-            official_years = pd.to_numeric(
-                demography_context.loc[
-                    demography_context["series_type"].astype(str).str.contains("官方", na=False),
-                    "year",
-                ],
-                errors="coerce",
-            ).dropna()
-            projection_years = pd.to_numeric(
-                demography_context.loc[
-                    demography_context["series_type"].astype(str).str.contains("预测", na=False),
-                    "year",
-                ],
-                errors="coerce",
-            ).dropna()
-            if not official_years.empty:
-                series_note += (
-                    f"{int(official_years.min())}-{int(official_years.max())} 年部分指标优先使用官方最新发布值。"
-                )
-            if not projection_years.empty:
-                series_note += (
-                    f"{int(projection_years.min())}-{int(projection_years.max())} 年未覆盖项保留 WPP 中位方案预测。"
-                )
-        st.markdown(
-            f'<div class="trend-note">* 数据源：{html.escape(demography_sources)}。'
-            f'<a href="{html.escape(demography_source_url, quote=True)}" target="_blank" rel="noopener noreferrer">'
-            f'World Population Prospects 2024</a>。人口数量类指标单位为万人。{html.escape(series_note)}</div>',
-            unsafe_allow_html=True,
-        )
-
 st.markdown(
     """
     <div id="app-bottom" class="app-footer">
-        ©️ <a href="https://github.com/taifuer/house_price_index" target="_blank" rel="noopener noreferrer">taifuer</a>
-        · 数据来源于 <a href="https://www.stats.gov.cn/" target="_blank" rel="noopener noreferrer">国家统计局</a>、
-        <a href="https://data.bis.org/" target="_blank" rel="noopener noreferrer">BIS</a>、
-        <a href="https://population.un.org/wpp/" target="_blank" rel="noopener noreferrer">UN WPP</a>
+        ©️ <a href="https://github.com/taifuer/house_price_index" target="_blank" rel="noopener noreferrer">House Price Index</a>
+        · 数据来源于 <a href="https://www.stats.gov.cn/" target="_blank" rel="noopener noreferrer">国家统计局</a>
         · Made with <a href="https://streamlit.io/" target="_blank" rel="noopener noreferrer">Streamlit</a>
     </div>
     """,
