@@ -404,7 +404,8 @@ st.markdown(
     .stAppHeader {{
         background: rgba(255, 255, 255, 0.96) !important;
         border-bottom: 1px solid #e5e7eb;
-        height: 3.5rem;
+        height: 3.5rem !important;
+        min-height: 3.5rem !important;
     }}
 
     [data-testid="stHeader"]::before,
@@ -422,18 +423,19 @@ st.markdown(
     }}
 
     .app-header-link {{
-        display: block;
+        align-items: center;
+        display: flex;
         font-size: 1.5rem;
         font-weight: 700;
+        height: 3.5rem;
         left: calc(4rem + var(--app-sidebar-width, 0px));
         line-height: 1.1;
         max-width: calc(100vw - var(--app-sidebar-width, 0px) - 8rem);
         overflow: hidden;
         position: fixed;
         text-overflow: ellipsis;
-        top: 1.75rem;
+        top: 0;
         transition: left 80ms linear, max-width 80ms linear;
-        transform: translateY(-50%);
         white-space: nowrap;
         z-index: 999990;
     }}
@@ -444,8 +446,30 @@ st.markdown(
     }}
 
     .block-container {{
-        padding-top: 1.78rem;
+        padding-top: 4.5rem;
         padding-bottom: 0.8rem;
+    }}
+
+    .block-container > [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:has([data-testid="stHtml"]),
+    .block-container > [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:has(.app-style-marker),
+    .block-container > [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:has(.app-header-link),
+    .block-container > [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:has(.page-anchor),
+    .block-container > [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:has(.scroll-jump) {{
+        height: 0 !important;
+        margin: 0 !important;
+        min-height: 0 !important;
+        padding: 0 !important;
+        position: absolute !important;
+    }}
+
+    .element-container:has(.app-header-link),
+    [data-testid="stElementContainer"]:has(.app-header-link),
+    [data-testid="stMarkdownContainer"]:has(.app-header-link) {{
+        height: 0 !important;
+        margin: 0 !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+        padding: 0 !important;
     }}
 
     .view-title {{
@@ -580,12 +604,22 @@ st.markdown(
     }}
 
     .app-footer {{
-        border-top: 1px solid #e5e7eb;
         color: #667085;
         font-size: 0.85rem;
         margin-top: 0.85rem;
         padding: 1.05rem 0 0.85rem;
+        position: relative;
         text-align: center;
+    }}
+
+    .app-footer::before {{
+        border-top: 1px solid #e5e7eb;
+        content: "";
+        left: 50%;
+        position: absolute;
+        top: 0;
+        transform: translateX(-50%);
+        width: calc(100vw - var(--app-sidebar-width, 0px));
     }}
 
     .app-footer a {{
@@ -672,7 +706,8 @@ st.markdown(
 
         [data-testid="stHeader"],
         .stAppHeader {{
-            height: 3.25rem;
+            height: 3.25rem !important;
+            min-height: 3.25rem !important;
         }}
 
         [data-testid="stHeader"]::before,
@@ -683,15 +718,15 @@ st.markdown(
 
         .app-header-link {{
             font-size: 1.12rem;
+            height: 3.25rem;
             left: 3.25rem;
             max-width: calc(100vw - 5.75rem);
-            top: 1.625rem;
         }}
 
         .block-container {{
             padding-left: 0.8rem;
             padding-right: 0.8rem;
-            padding-top: 1.68rem;
+            padding-top: 4.15rem;
         }}
 
         .view-title {{
@@ -739,6 +774,7 @@ st.markdown(
         }}
     }}
     </style>
+    <span class="app-style-marker" aria-hidden="true"></span>
     """,
     unsafe_allow_html=True,
 )
