@@ -1,0 +1,18 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    container_name: house-price-index
+    environment:
+      BAIDU_ANALYTICS_ID: ${BAIDU_ANALYTICS_ID:-}
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8501:8501"
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

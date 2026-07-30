@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.DS_Store
+.env
+*.md
+demo
+tests
+data/house_price_index_missing.json
+data/house_price_index_sample_history.csv
+data/debug_*.csv

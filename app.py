@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import html
 import inspect
+import os
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -49,6 +51,25 @@ st.html(
     """,
     unsafe_allow_javascript=True,
 )
+
+baidu_analytics_id = os.getenv("BAIDU_ANALYTICS_ID", "").strip()
+if baidu_analytics_id:
+    if not re.fullmatch(r"[0-9a-fA-F]{32}", baidu_analytics_id):
+        raise ValueError("BAIDU_ANALYTICS_ID must be a 32-character hexadecimal site ID")
+    st.html(
+        f"""
+        <script>
+        var _hmt = _hmt || [];
+        (function() {{
+          var hm = document.createElement("script");
+          hm.src = "https://hm.baidu.com/hm.js?{baidu_analytics_id}";
+          var s = document.getElementsByTagName("script")[0];
+          s.parentNode.insertBefore(hm, s);
+        }})();
+        </script>
+        """,
+        unsafe_allow_javascript=True,
+    )
 
 SIZE_BAND_ORDER = ["全部", "90m2及以下", "90-144m2", "144m2以上"]
 METRIC_ORDER = ["环比", "同比", "累计平均"]

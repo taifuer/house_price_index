@@ -27,6 +27,9 @@
 ├── app.py                                  # Streamlit 可视化应用
 ├── dashboard_trends.py                     # 总体与分层趋势数据聚合
 ├── .streamlit/config.toml                  # Streamlit 本地展示配置
+├── Dockerfile                              # 生产镜像定义
+├── docker-compose.yml                      # 单容器部署配置
+├── DEPLOY.md                               # Docker 部署说明
 ├── assets/favicon.ico                      # 房屋 favicon
 ├── scripts/fetch_stats.py                  # 数据获取、解析、导出 CLI
 ├── tests/                                   # 数据聚合与抓取回归测试
@@ -86,6 +89,8 @@ python3 scripts/fetch_stats.py \
 ```bash
 streamlit run app.py
 ```
+
+Docker 部署及可选百度统计配置见 [`DEPLOY.md`](./DEPLOY.md)。
 
 应用会优先读取压缩后的全历史数据：
 
