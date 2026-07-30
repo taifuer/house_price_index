@@ -485,7 +485,7 @@ st.markdown(
     }}
 
     .block-container {{
-        padding-top: calc(3.5rem + 1.25rem);
+        padding-top: calc(3.5rem + 1.75rem);
         padding-bottom: 0.8rem;
     }}
 
@@ -765,7 +765,7 @@ st.markdown(
         .block-container {{
             padding-left: 0.8rem;
             padding-right: 0.8rem;
-            padding-top: calc(3.25rem + 1.05rem);
+            padding-top: calc(3.25rem + 1.5rem);
         }}
 
         .view-title {{
