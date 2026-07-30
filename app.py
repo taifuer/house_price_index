@@ -75,6 +75,7 @@ SIZE_BAND_ORDER = ["全部", "90m2及以下", "90-144m2", "144m2以上"]
 METRIC_ORDER = ["环比", "同比", "累计平均"]
 RANK_TIER_OPTIONS = ["全部", "一线", "二线", "三线"]
 RANK_MOBILE_WINDOW = 10
+RANK_DESKTOP_WINDOW = 30
 TREND_DEFAULT_YEARS = 10
 DATA_CATEGORY_COLUMNS = [
     "table_name",
@@ -473,6 +474,10 @@ st.markdown(
         display: none;
     }}
 
+    [data-testid="stMain"] {{
+        overflow-x: hidden !important;
+    }}
+
     .app-header-link,
     .app-header-link:hover,
     .app-header-link:focus,
@@ -577,6 +582,38 @@ st.markdown(
 
     .summary-item.range .summary-value {{
         font-size: 1.65rem;
+    }}
+
+    .js-plotly-plot .rangeplot .bartext {{
+        display: none !important;
+    }}
+
+    .js-plotly-plot .rangeslider-mask-min,
+    .js-plotly-plot .rangeslider-mask-max {{
+        fill: rgba(102, 112, 133, 0.3) !important;
+    }}
+
+    .js-plotly-plot .rangeslider-slidebox {{
+        cursor: grab !important;
+        fill: rgba(37, 99, 235, 0.16) !important;
+        stroke: #2563eb !important;
+        stroke-width: 2px !important;
+    }}
+
+    .js-plotly-plot .rangeslider-slidebox:active {{
+        cursor: grabbing !important;
+    }}
+
+    .js-plotly-plot .rangeslider-grabarea-min,
+    .js-plotly-plot .rangeslider-grabarea-max {{
+        cursor: col-resize !important;
+    }}
+
+    .js-plotly-plot .rangeslider-handle-min,
+    .js-plotly-plot .rangeslider-handle-max {{
+        fill: #ffffff !important;
+        stroke: #2563eb !important;
+        stroke-width: 1.5px !important;
     }}
 
     .chart-title {{
@@ -907,6 +944,80 @@ st.html(
             hostWindow.__housePriceLayoutCleanup();
         }
 
+        let sliderMoveState = null;
+        const eventElement = (event) => event.target instanceof hostWindow.Element ? event.target : null;
+        const constrainSliderWindow = (state) => {
+            const currentRange = state.plot?._fullLayout?.xaxis?.range;
+            if (state.correcting || !Array.isArray(currentRange) || currentRange.length !== 2) {
+                return;
+            }
+            const currentStart = Number(currentRange[0]);
+            const currentEnd = Number(currentRange[1]);
+            if (!Number.isFinite(currentStart) || !Number.isFinite(currentEnd)) {
+                return;
+            }
+            const currentWidth = currentEnd - currentStart;
+            if (Math.abs(currentWidth - state.width) < 1e-6) {
+                return;
+            }
+            const maximumStart = state.maximum - state.width;
+            const centeredStart = (currentStart + currentEnd - state.width) / 2;
+            const nextStart = Math.min(Math.max(centeredStart, state.minimum), maximumStart);
+            const nextRange = [nextStart, nextStart + state.width];
+            state.correcting = true;
+            Promise.resolve(hostWindow.Plotly.relayout(state.plot, { "xaxis.range": nextRange }))
+                .finally(() => { state.correcting = false; });
+        };
+        const startSliderMove = (event) => {
+            if (sliderMoveState) {
+                return;
+            }
+            const target = eventElement(event);
+            const slidebox = target?.closest(".rangeslider-slidebox");
+            if (!slidebox || target.closest(".rangeslider-grabarea-min, .rangeslider-grabarea-max")) {
+                return;
+            }
+            const plot = slidebox.closest(".js-plotly-plot");
+            const currentRange = plot?._fullLayout?.xaxis?.range;
+            const sliderRange = plot?._fullLayout?.xaxis?.rangeslider?.range;
+            if (!plot || !hostWindow.Plotly || !Array.isArray(currentRange) || !Array.isArray(sliderRange)) {
+                return;
+            }
+            sliderMoveState = {
+                plot,
+                width: Number(currentRange[1]) - Number(currentRange[0]),
+                minimum: Number(sliderRange[0]),
+                maximum: Number(sliderRange[1]),
+                correcting: false,
+            };
+        };
+        const finalizeSliderWindow = (state, attempt = 0) => {
+            if (state.correcting) {
+                if (attempt < 6) {
+                    hostWindow.setTimeout(() => finalizeSliderWindow(state, attempt + 1), 24);
+                }
+                return;
+            }
+            constrainSliderWindow(state);
+            if (attempt < 2) {
+                hostWindow.setTimeout(() => finalizeSliderWindow(state, attempt + 1), 32);
+            }
+        };
+        const finishSliderMove = () => {
+            const state = sliderMoveState;
+            sliderMoveState = null;
+            if (state) {
+                hostWindow.setTimeout(() => finalizeSliderWindow(state), 24);
+            }
+        };
+        doc.addEventListener("pointerdown", startSliderMove, true);
+        doc.addEventListener("mousedown", startSliderMove, true);
+        doc.addEventListener("touchstart", startSliderMove, { capture: true, passive: true });
+        hostWindow.addEventListener("pointerup", finishSliderMove, { passive: true });
+        hostWindow.addEventListener("mouseup", finishSliderMove, { passive: true });
+        hostWindow.addEventListener("touchend", finishSliderMove, { passive: true });
+        hostWindow.addEventListener("touchcancel", finishSliderMove, { passive: true });
+
         const sidebar = doc.querySelector('[data-testid="stSidebar"]');
         let sidebarResizeObserver = null;
         let sidebarMutationObserver = null;
@@ -991,6 +1102,13 @@ st.html(
         attachFooter();
 
         hostWindow.__housePriceLayoutCleanup = () => {
+            doc.removeEventListener("pointerdown", startSliderMove, true);
+            doc.removeEventListener("mousedown", startSliderMove, true);
+            doc.removeEventListener("touchstart", startSliderMove, true);
+            hostWindow.removeEventListener("pointerup", finishSliderMove);
+            hostWindow.removeEventListener("mouseup", finishSliderMove);
+            hostWindow.removeEventListener("touchend", finishSliderMove);
+            hostWindow.removeEventListener("touchcancel", finishSliderMove);
             sidebarResizeObserver?.disconnect();
             sidebarMutationObserver?.disconnect();
             if (sourceAttachTimer) {
@@ -1106,8 +1224,20 @@ with st.expander(view_title, expanded=True):
     def rank_axis_range(view: pd.DataFrame) -> list[float]:
         if view.empty:
             return [0.5, 1.5]
-        visible_count = min(len(view), RANK_MOBILE_WINDOW) if is_mobile_viewport else len(view)
+        window_size = RANK_MOBILE_WINDOW if is_mobile_viewport else RANK_DESKTOP_WINDOW
+        visible_count = min(len(view), window_size)
         return [view["display_rank"].min() - 0.5, visible_count + 0.5]
+
+
+    def rank_slider_range(view: pd.DataFrame) -> list[float]:
+        if view.empty:
+            return [0.5, 1.5]
+        return [view["display_rank"].min() - 0.5, view["display_rank"].max() + 0.5]
+
+
+    def rank_slider_visible(view: pd.DataFrame) -> bool:
+        window_size = RANK_MOBILE_WINDOW if is_mobile_viewport else RANK_DESKTOP_WINDOW
+        return len(view) > window_size
 
 
     def rank_button_args(selected_tier: str) -> list[dict[str, object]]:
@@ -1124,6 +1254,8 @@ with st.expander(view_title, expanded=True):
                 "xaxis.tickvals": view["display_rank"].tolist(),
                 "xaxis.ticktext": view["city"].tolist(),
                 "xaxis.range": rank_axis_range(view),
+                "xaxis.rangeslider.visible": rank_slider_visible(view),
+                "xaxis.rangeslider.range": rank_slider_range(view),
             },
         ]
 
@@ -1160,6 +1292,14 @@ with st.expander(view_title, expanded=True):
             "tickvals": rank_view["display_rank"],
             "ticktext": rank_view["city"],
             "range": rank_axis_range(rank_view),
+            "rangeslider": {
+                "visible": rank_slider_visible(rank_view),
+                "range": rank_slider_range(rank_view),
+                "thickness": 0.09 if is_mobile_viewport else 0.07,
+                "bgcolor": "#f9fafb",
+                "bordercolor": "#d0d5dd",
+                "borderwidth": 1,
+            },
             "showgrid": False,
         },
         yaxis={"zeroline": True},
