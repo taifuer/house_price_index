@@ -344,10 +344,28 @@ def css_content(value: str) -> str:
 
 
 def render_plotly_chart(fig: go.Figure) -> None:
+    fig.update_xaxes(fixedrange=True)
+    fig.update_yaxes(fixedrange=True)
+    config = {
+        "displaylogo": False,
+        "displayModeBar": False if is_mobile_viewport else "hover",
+        "doubleClick": False,
+        "scrollZoom": False,
+        "modeBarButtonsToRemove": [
+            "zoom2d",
+            "pan2d",
+            "select2d",
+            "lasso2d",
+            "zoomIn2d",
+            "zoomOut2d",
+            "autoScale2d",
+            "resetScale2d",
+        ],
+    }
     if "width" in inspect.signature(st.plotly_chart).parameters:
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, width="stretch", config=config)
     else:
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, config=config)
 
 
 if not DATA_PATH.exists():
@@ -467,7 +485,7 @@ st.markdown(
     }}
 
     .block-container {{
-        padding-top: 4.5rem;
+        padding-top: calc(3.5rem + 1.25rem);
         padding-bottom: 0.8rem;
     }}
 
@@ -747,7 +765,7 @@ st.markdown(
         .block-container {{
             padding-left: 0.8rem;
             padding-right: 0.8rem;
-            padding-top: 4.15rem;
+            padding-top: calc(3.25rem + 1.05rem);
         }}
 
         .view-title {{
