@@ -344,23 +344,28 @@ def css_content(value: str) -> str:
 
 
 def render_plotly_chart(fig: go.Figure) -> None:
-    fig.update_xaxes(fixedrange=True)
-    fig.update_yaxes(fixedrange=True)
+    fig.update_layout(dragmode=False if is_mobile_viewport else "zoom")
+    fig.update_xaxes(fixedrange=is_mobile_viewport)
+    fig.update_yaxes(fixedrange=is_mobile_viewport)
     config = {
         "displaylogo": False,
-        "displayModeBar": False if is_mobile_viewport else "hover",
-        "doubleClick": False,
+        "displayModeBar": True if is_mobile_viewport else "hover",
+        "doubleClick": False if is_mobile_viewport else "reset+autosize",
         "scrollZoom": False,
-        "modeBarButtonsToRemove": [
-            "zoom2d",
-            "pan2d",
-            "select2d",
-            "lasso2d",
-            "zoomIn2d",
-            "zoomOut2d",
-            "autoScale2d",
-            "resetScale2d",
-        ],
+        "modeBarButtonsToRemove": (
+            [
+                "zoom2d",
+                "pan2d",
+                "select2d",
+                "lasso2d",
+                "zoomIn2d",
+                "zoomOut2d",
+                "autoScale2d",
+                "resetScale2d",
+            ]
+            if is_mobile_viewport
+            else ["pan2d", "zoomIn2d", "zoomOut2d", "autoScale2d"]
+        ),
     }
     if "width" in inspect.signature(st.plotly_chart).parameters:
         st.plotly_chart(fig, width="stretch", config=config)
@@ -499,6 +504,12 @@ st.markdown(
         min-height: 0 !important;
         padding: 0 !important;
         position: absolute !important;
+    }}
+
+    .block-container > [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:has(.app-style-marker),
+    [data-testid="stMarkdownContainer"]:has(.app-style-marker) {{
+        max-width: 0 !important;
+        width: 0 !important;
     }}
 
     .element-container:has(.app-header-link),
@@ -825,10 +836,26 @@ st.html(
         const hostWindow = window.parent && window.parent !== window ? window.parent : window;
         const doc = hostWindow.document;
         const root = doc.documentElement;
+        const resetPlotSelection = (event) => {
+            const button = event.target.closest?.(".modebar-btn");
+            const title = button?.getAttribute("data-title") || button?.getAttribute("aria-label");
+            if (title !== "Reset axes") {
+                return;
+            }
+            const plot = button.closest(".js-plotly-plot");
+            if (!plot || !hostWindow.Plotly) {
+                return;
+            }
+            hostWindow.setTimeout(async () => {
+                await hostWindow.Plotly.relayout(plot, { selections: [], dragmode: "zoom" });
+                await hostWindow.Plotly.restyle(plot, { selectedpoints: [null] });
+            }, 0);
+        };
 
         if (hostWindow.__housePriceLayoutCleanup) {
             hostWindow.__housePriceLayoutCleanup();
         }
+        doc.addEventListener("click", resetPlotSelection, true);
 
         const sidebar = doc.querySelector('[data-testid="stSidebar"]');
         let sidebarResizeObserver = null;
@@ -914,6 +941,7 @@ st.html(
         attachFooter();
 
         hostWindow.__housePriceLayoutCleanup = () => {
+            doc.removeEventListener("click", resetPlotSelection, true);
             sidebarResizeObserver?.disconnect();
             sidebarMutationObserver?.disconnect();
             if (sourceAttachTimer) {
