@@ -549,6 +549,36 @@ st.markdown(
         margin: 0 0 1rem;
     }}
 
+    .summary-grid {{
+        align-items: start;
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(6, minmax(0, 1fr)) minmax(8rem, 1.35fr);
+        margin: 0.25rem 0 1.35rem;
+    }}
+
+    .summary-item {{
+        min-width: 0;
+    }}
+
+    .summary-label {{
+        color: #475467;
+        font-size: 0.88rem;
+        line-height: 1.3;
+        margin-bottom: 0.3rem;
+    }}
+
+    .summary-value {{
+        color: #101828;
+        font-size: 1.85rem;
+        line-height: 1.2;
+        white-space: nowrap;
+    }}
+
+    .summary-item.range .summary-value {{
+        font-size: 1.65rem;
+    }}
+
     .chart-title {{
         color: #111827;
         font-size: 1.05rem;
@@ -802,6 +832,27 @@ st.markdown(
             margin-bottom: 0.85rem;
         }}
 
+        .summary-grid {{
+            column-gap: 0.6rem;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            margin-bottom: 1.15rem;
+            row-gap: 1rem;
+        }}
+
+        .summary-label {{
+            font-size: 0.8rem;
+            margin-bottom: 0.2rem;
+        }}
+
+        .summary-value,
+        .summary-item.range .summary-value {{
+            font-size: 1.55rem;
+        }}
+
+        .summary-item.range {{
+            grid-column: span 2;
+        }}
+
         .chart-title {{
             font-size: 0.98rem;
             margin-top: 1.05rem;
@@ -1013,14 +1064,23 @@ with st.expander(view_title, expanded=True):
     max_row = filtered.loc[filtered["change_pct"].idxmax()]
     min_row = filtered.loc[filtered["change_pct"].idxmin()]
 
-    summary_cols = st.columns(7)
-    summary_cols[0].metric("覆盖城市", city_count)
-    summary_cols[1].metric("上涨", up_count)
-    summary_cols[2].metric("持平", flat_count)
-    summary_cols[3].metric("下降", down_count)
-    summary_cols[4].metric("均值", format_pct(avg_change))
-    summary_cols[5].metric("中位数", format_pct(median_change))
-    summary_cols[6].metric("区间", f"{format_pct(min_row['change_pct'])} ~ {format_pct(max_row['change_pct'])}")
+    summary_items = [
+        ("覆盖城市", str(city_count), ""),
+        ("上涨", str(up_count), ""),
+        ("持平", str(flat_count), ""),
+        ("下降", str(down_count), ""),
+        ("均值", format_pct(avg_change), ""),
+        ("中位数", format_pct(median_change), ""),
+        ("区间", f"{format_pct(min_row['change_pct'])} ~ {format_pct(max_row['change_pct'])}", "range"),
+    ]
+    summary_markup = "".join(
+        f'<div class="summary-item {item_class}">'
+        f'<div class="summary-label">{html.escape(label)}</div>'
+        f'<div class="summary-value">{html.escape(value)}</div>'
+        "</div>"
+        for label, value, item_class in summary_items
+    )
+    st.markdown(f'<div class="summary-grid">{summary_markup}</div>', unsafe_allow_html=True)
 
     rank_color_limit = max(abs(filtered["change_pct"].min()), abs(filtered["change_pct"].max()), 0.1)
     rank_tier_options = ["全部"] + [tier for tier in RANK_TIER_OPTIONS[1:] if tier in set(filtered["city_tier"])]
