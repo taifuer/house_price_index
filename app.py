@@ -253,6 +253,13 @@ def add_time_range_buttons(
         ("近5年", 5 * periods_per_year),
         ("近10年", 10 * periods_per_year),
     ]
+    if is_mobile_viewport:
+        current_height = fig.layout.height or 450
+        current_top_margin = fig.layout.margin.t or 0
+        fig.update_layout(
+            height=current_height + 56,
+            margin={"t": current_top_margin + 56},
+        )
     existing_menus = list(fig.layout.updatemenus) if fig.layout.updatemenus else []
     fig.update_layout(
         updatemenus=existing_menus
@@ -260,9 +267,9 @@ def add_time_range_buttons(
             {
                 "type": "buttons",
                 "direction": "left",
-                "x": 0.99,
-                "xanchor": "right",
-                "y": 1.12,
+                "x": 0 if is_mobile_viewport else 0.99,
+                "xanchor": "left" if is_mobile_viewport else "right",
+                "y": 1.31 if is_mobile_viewport else 1.12,
                 "yanchor": "top",
                 "pad": {"r": 0, "t": 0},
                 "active": active_index,
@@ -294,7 +301,7 @@ def apply_top_left_legend(fig: go.Figure) -> None:
             "xanchor": "left",
             "y": 1.12,
             "yanchor": "top",
-            "font": {"size": 12},
+            "font": {"size": 11 if is_mobile_viewport else 12},
             "bgcolor": "rgba(255,255,255,0.72)",
             "bordercolor": "rgba(208,213,221,0.85)",
             "borderwidth": 1,
@@ -364,7 +371,15 @@ def render_plotly_chart(fig: go.Figure) -> None:
                 "resetScale2d",
             ]
             if is_mobile_viewport
-            else ["pan2d", "zoomIn2d", "zoomOut2d", "autoScale2d"]
+            else [
+                "zoom2d",
+                "pan2d",
+                "select2d",
+                "lasso2d",
+                "zoomIn2d",
+                "zoomOut2d",
+                "autoScale2d",
+            ]
         ),
     }
     if "width" in inspect.signature(st.plotly_chart).parameters:
@@ -836,26 +851,10 @@ st.html(
         const hostWindow = window.parent && window.parent !== window ? window.parent : window;
         const doc = hostWindow.document;
         const root = doc.documentElement;
-        const resetPlotSelection = (event) => {
-            const button = event.target.closest?.(".modebar-btn");
-            const title = button?.getAttribute("data-title") || button?.getAttribute("aria-label");
-            if (title !== "Reset axes") {
-                return;
-            }
-            const plot = button.closest(".js-plotly-plot");
-            if (!plot || !hostWindow.Plotly) {
-                return;
-            }
-            hostWindow.setTimeout(async () => {
-                await hostWindow.Plotly.relayout(plot, { selections: [], dragmode: "zoom" });
-                await hostWindow.Plotly.restyle(plot, { selectedpoints: [null] });
-            }, 0);
-        };
 
         if (hostWindow.__housePriceLayoutCleanup) {
             hostWindow.__housePriceLayoutCleanup();
         }
-        doc.addEventListener("click", resetPlotSelection, true);
 
         const sidebar = doc.querySelector('[data-testid="stSidebar"]');
         let sidebarResizeObserver = null;
@@ -941,7 +940,6 @@ st.html(
         attachFooter();
 
         hostWindow.__housePriceLayoutCleanup = () => {
-            doc.removeEventListener("click", resetPlotSelection, true);
             sidebarResizeObserver?.disconnect();
             sidebarMutationObserver?.disconnect();
             if (sourceAttachTimer) {
