@@ -30,6 +30,7 @@
 ├── Dockerfile                              # 生产镜像定义
 ├── docker-compose.yml                      # 单容器部署配置
 ├── DEPLOY.md                               # Docker 部署说明
+├── PROJECT_RETROSPECTIVE.md                # 项目工程复盘与可复用方法
 ├── assets/favicon.ico                      # 房屋 favicon
 ├── scripts/fetch_stats.py                  # 数据获取、解析、导出 CLI
 ├── tests/                                   # 数据聚合与抓取回归测试
@@ -153,3 +154,5 @@ python3 -m unittest discover -s tests
 ```
 
 修改解析逻辑后，建议至少验证一个现代详情页和一个旧迁移页。
+
+项目从数据发现、解析、可视化到生产部署的完整演进、踩坑和可复用方法，见 [`PROJECT_RETROSPECTIVE.md`](./PROJECT_RETROSPECTIVE.md)。
