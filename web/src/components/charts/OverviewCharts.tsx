@@ -49,7 +49,7 @@ export function RankingChart({ data, filePrefix }: OverviewChartProps) {
   const option = useMemo<EChartsCoreOption>(() => ({
     animationDuration: 350,
     aria: { enabled: true, description: "按价格变动从高到低排列的城市柱状图" },
-    grid: { left: isMobile ? 42 : 54, right: 18, top: 30, bottom: isMobile ? 122 : 118 },
+    grid: { left: isMobile ? 42 : 54, right: 18, top: 30, bottom: isMobile ? 96 : 118 },
     tooltip: {
       trigger: "item",
       borderColor: "#d0d5dd",

@@ -28,6 +28,26 @@ test("renders the complete default dashboard without horizontal overflow", async
   expect(bodyContent).not.toBeNull();
   expect(Math.abs(headerContent!.x - bodyContent!.x)).toBeLessThanOrEqual(1);
   expect(Math.abs(headerContent!.x + headerContent!.width - bodyContent!.x - bodyContent!.width)).toBeLessThanOrEqual(1);
+  if (testInfo.project.name === "mobile") {
+    const rankingSpacing = await page.locator(".ranking-chart .chart-canvas svg").evaluate((svg) => {
+      const rectangles = [...svg.querySelectorAll("*")].map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { fill: element.getAttribute("fill"), rect };
+      });
+      const selection = rectangles.find(({ fill, rect }) => fill === "#93b4e8" && rect.width > 100);
+      if (!selection) return null;
+      const nearestLabelBottom = Math.max(
+        ...[...svg.querySelectorAll("text")]
+          .map((element) => element.getBoundingClientRect())
+          .filter((rect) => rect.bottom <= selection.rect.top && rect.bottom > selection.rect.top - 100)
+          .map((rect) => rect.bottom),
+      );
+      return selection.rect.top - nearestLabelBottom;
+    });
+    expect(rankingSpacing).not.toBeNull();
+    expect(rankingSpacing!).toBeGreaterThanOrEqual(8);
+    expect(rankingSpacing!).toBeLessThanOrEqual(30);
+  }
   await page.screenshot({ path: `/tmp/house-v4-${testInfo.project.name}.png`, fullPage: true });
   if (testInfo.project.name === "desktop") {
     await page.screenshot({ path: "/tmp/house-v4-overview.png", fullPage: false });
@@ -138,7 +158,7 @@ test("filter drawer overlays the dashboard and restores defaults", async ({ page
   await expect(page.locator(".filter-toggle")).toBeFocused();
 });
 
-test("chart download and fullscreen controls work", async ({ page }) => {
+test("chart download and fullscreen controls work", async ({ page }, testInfo) => {
   const firstChart = page.locator(".chart-shell").first();
   await firstChart.hover();
   const downloadPromise = page.waitForEvent("download");
@@ -146,9 +166,18 @@ test("chart download and fullscreen controls work", async ({ page }) => {
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/城市排名\.svg$/);
 
-  await firstChart.getByRole("button", { name: "全屏查看" }).click();
+  const fullscreenButton = firstChart.getByRole("button", { name: "全屏查看" });
+  if (testInfo.project.name === "mobile") {
+    await expect(fullscreenButton).toHaveCount(0);
+    return;
+  }
+  await fullscreenButton.click();
   await expect.poll(() => page.evaluate(() => document.fullscreenElement?.classList.contains("chart-shell") ?? false)).toBe(true);
-  await page.keyboard.press("Escape");
+  const exitFullscreenButton = firstChart.getByRole("button", { name: "退出全屏" });
+  await expect(exitFullscreenButton).toBeVisible();
+  await exitFullscreenButton.click();
+  await expect.poll(() => page.evaluate(() => document.fullscreenElement == null)).toBe(true);
+  await expect(firstChart.getByRole("button", { name: "全屏查看" })).toBeVisible();
 });
 
 test("tier trend and city selection render client-side", async ({ page }, testInfo) => {
@@ -165,6 +194,13 @@ test("tier trend and city selection render client-side", async ({ page }, testIn
   expect(overallCanvasBox).not.toBeNull();
   expect(overallLegendBox).not.toBeNull();
   expect(overallLegendBox!.y).toBeGreaterThan(overallCanvasBox!.y + overallCanvasBox!.height * 0.88);
+  if (testInfo.project.name === "mobile") {
+    const yearBox = await trend.locator(".chart-canvas svg text").filter({ hasText: /^2026年$/ }).boundingBox();
+    expect(yearBox).not.toBeNull();
+    const gap = overallLegendBox!.y - (yearBox!.y + yearBox!.height);
+    expect(gap).toBeGreaterThanOrEqual(8);
+    expect(gap).toBeLessThanOrEqual(30);
+  }
   await trend.screenshot({ path: `/tmp/house-v4-overall-trend-${testInfo.project.name}.png` });
 
   await trend.locator(".trend-mode-row").getByRole("button", { name: "分层" }).click();
@@ -175,6 +211,13 @@ test("tier trend and city selection render client-side", async ({ page }, testIn
   expect(tierCanvasBox).not.toBeNull();
   expect(tierLegendBox).not.toBeNull();
   expect(tierLegendBox!.y).toBeGreaterThan(tierCanvasBox!.y + tierCanvasBox!.height * 0.9);
+  if (testInfo.project.name === "mobile") {
+    const yearBox = await trend.locator(".chart-canvas svg text").filter({ hasText: /^2026年$/ }).boundingBox();
+    expect(yearBox).not.toBeNull();
+    const gap = tierLegendBox!.y - (yearBox!.y + yearBox!.height);
+    expect(gap).toBeGreaterThanOrEqual(8);
+    expect(gap).toBeLessThanOrEqual(30);
+  }
 
   const cityPicker = page.locator(".city-picker");
   await cityPicker.getByRole("button", { name: "选择城市" }).click();
@@ -199,6 +242,13 @@ test("tier trend and city selection render client-side", async ({ page }, testIn
   expect(cityCanvasBox).not.toBeNull();
   expect(cityLegendBox).not.toBeNull();
   expect(cityLegendBox!.y).toBeGreaterThan(cityCanvasBox!.y + cityCanvasBox!.height * 0.88);
+  if (testInfo.project.name === "mobile") {
+    const yearBox = await cityTrend.locator(".chart-canvas svg text").filter({ hasText: /^2026年$/ }).boundingBox();
+    expect(yearBox).not.toBeNull();
+    const gap = cityLegendBox!.y - (yearBox!.y + yearBox!.height);
+    expect(gap).toBeGreaterThanOrEqual(8);
+    expect(gap).toBeLessThanOrEqual(30);
+  }
   await cityTrend.screenshot({ path: `/tmp/house-v4-city-trend-10-${testInfo.project.name}.png` });
 
   if (testInfo.project.name === "desktop") {

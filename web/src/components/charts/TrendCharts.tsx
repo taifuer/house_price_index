@@ -64,7 +64,7 @@ export function OverallTrendChart({ manifest, shard, filePrefix }: TrendProps) {
       aria: { enabled: true, description: "各月上涨、持平和下跌城市数量趋势" },
       color: [COLORS.up, COLORS.flat, COLORS.down],
       legend: { bottom: 4, left: "center", itemWidth: 12, itemHeight: 12, textStyle: axisLabelStyle },
-      grid: { left: 52, right: 18, top: 24, bottom: 78 },
+      grid: { left: 52, right: 18, top: 24, bottom: isMobile ? 60 : 78 },
       tooltip: {
         trigger: "axis",
         axisPointer: { type: "shadow" },
@@ -97,7 +97,8 @@ export function OverallTrendChart({ manifest, shard, filePrefix }: TrendProps) {
 
   const tierOption = useMemo<EChartsCoreOption>(() => {
     const tiers: CityTier[] = ["一线", "二线", "三线"];
-    const grids = tiers.map((_, index) => ({ left: 56, right: 18, top: 40 + index * 184, height: 142 }));
+    const tierStep = isMobile ? 199 : 184;
+    const grids = tiers.map((_, index) => ({ left: 56, right: 18, top: 40 + index * tierStep, height: 142 }));
     const axes = tiers.map((_, index) => ({
       ...yearAxis(visiblePeriods, index === tiers.length - 1, isMobile ? 2 : 1),
       gridIndex: index,
@@ -108,7 +109,7 @@ export function OverallTrendChart({ manifest, shard, filePrefix }: TrendProps) {
       legend: { bottom: 4, left: "center", itemWidth: 12, itemHeight: 12, textStyle: axisLabelStyle },
       title: tiers.map((tier, index) => ({
         text: `${tier}（${manifest.cities.filter((city) => city.tier === tier).length} 城）`,
-        top: 10 + index * 184,
+        top: 10 + index * tierStep,
         left: "center",
         textStyle: { color: COLORS.muted, fontSize: 13, fontWeight: 500 },
       })),
@@ -230,7 +231,7 @@ export function CityTrendChart({
       pageTextStyle: axisLabelStyle,
       textStyle: axisLabelStyle,
     },
-    grid: { left: 52, right: 18, top: 24, bottom: 82 },
+    grid: { left: 52, right: 18, top: 24, bottom: isMobile ? 60 : 82 },
     tooltip: { trigger: "axis", borderColor: "#d0d5dd", valueFormatter: (value: unknown) => value == null ? "无数据" : formatPct(Number(value)) },
     xAxis: yearAxis(visiblePeriods, true, isMobile ? 2 : 1),
     yAxis: {

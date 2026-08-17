@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BarChart, CustomChart, LineChart, ScatterChart } from "echarts/charts";
 import {
   AriaComponent,
@@ -12,7 +12,9 @@ import {
 import * as echarts from "echarts/core";
 import type { EChartsCoreOption, EChartsType } from "echarts/core";
 import { SVGRenderer } from "echarts/renderers";
-import { Camera, Maximize2, RotateCcw } from "lucide-react";
+import { Camera, Maximize2, Minimize2, RotateCcw } from "lucide-react";
+
+import { useMediaQuery } from "../hooks/useMediaQuery";
 
 echarts.use([
   AriaComponent,
@@ -39,6 +41,8 @@ interface EChartProps {
 }
 
 export function EChart({ option, height, ariaLabel, fileName, showReset = false, className = "" }: EChartProps) {
+  const isMobile = useMediaQuery("(max-width: 767px)");
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<EChartsType | null>(null);
@@ -62,6 +66,15 @@ export function EChart({ option, height, ariaLabel, fileName, showReset = false,
     chartRef.current?.setOption(option, { notMerge: true, lazyUpdate: true });
   }, [option]);
 
+  useEffect(() => {
+    const updateFullscreenState = () => {
+      setIsFullscreen(document.fullscreenElement === wrapperRef.current);
+      requestAnimationFrame(() => chartRef.current?.resize());
+    };
+    document.addEventListener("fullscreenchange", updateFullscreenState);
+    return () => document.removeEventListener("fullscreenchange", updateFullscreenState);
+  }, []);
+
   const download = () => {
     const chart = chartRef.current;
     if (!chart) return;
@@ -71,10 +84,15 @@ export function EChart({ option, height, ariaLabel, fileName, showReset = false,
     anchor.click();
   };
 
-  const enterFullscreen = async () => {
-    if (!wrapperRef.current?.requestFullscreen) return;
-    await wrapperRef.current.requestFullscreen();
-    requestAnimationFrame(() => chartRef.current?.resize());
+  const toggleFullscreen = async () => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    if (document.fullscreenElement === wrapper) {
+      await document.exitFullscreen();
+      return;
+    }
+    if (!wrapper.requestFullscreen) return;
+    await wrapper.requestFullscreen();
   };
 
   const reset = () => chartRef.current?.setOption(optionRef.current, { notMerge: true });
@@ -90,9 +108,18 @@ export function EChart({ option, height, ariaLabel, fileName, showReset = false,
         <button type="button" onClick={download} title="下载图表" aria-label="下载图表">
           <Camera size={16} strokeWidth={1.8} />
         </button>
-        <button type="button" onClick={enterFullscreen} title="全屏查看" aria-label="全屏查看">
-          <Maximize2 size={16} strokeWidth={1.8} />
-        </button>
+        {!isMobile && (
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? "退出全屏" : "全屏查看"}
+            aria-label={isFullscreen ? "退出全屏" : "全屏查看"}
+          >
+            {isFullscreen
+              ? <Minimize2 size={16} strokeWidth={1.8} />
+              : <Maximize2 size={16} strokeWidth={1.8} />}
+          </button>
+        )}
       </div>
       <div
         ref={canvasRef}
