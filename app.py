@@ -12,6 +12,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
 
+from dashboard_runtime import is_mobile_request
 from dashboard_trends import TREND_TIERS, build_overall_trend, build_tier_trend
 
 
@@ -21,7 +22,6 @@ if not DATA_PATH.exists():
 if not DATA_PATH.exists():
     DATA_PATH = Path("data/house_price_index.csv")
 FAVICON_PATH = Path("assets/favicon.ico")
-MOBILE_BREAKPOINT_PX = 768
 
 st.set_page_config(
     page_title="全国 70 城商品住宅价格指数",
@@ -30,27 +30,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-viewport_mode = str(st.query_params.get("viewport", "desktop"))
-is_mobile_viewport = viewport_mode == "mobile"
-st.html(
-    f"""
-    <script>
-    (() => {{
-        try {{
-            const width = window.innerWidth || document.documentElement.clientWidth || 0;
-            const mode = width > 0 && width < {MOBILE_BREAKPOINT_PX} ? "mobile" : "desktop";
-            const url = new URL(window.location.href);
-            const current = url.searchParams.get("viewport");
-            if ((current && current !== mode) || (!current && mode === "mobile")) {{
-                url.searchParams.set("viewport", mode);
-                window.location.replace(url.toString());
-            }}
-        }} catch (error) {{}}
-    }})();
-    </script>
-    """,
-    unsafe_allow_javascript=True,
-)
+is_mobile_viewport = is_mobile_request(st.context.headers)
 
 baidu_analytics_id = os.getenv("BAIDU_ANALYTICS_ID", "").strip()
 if baidu_analytics_id:

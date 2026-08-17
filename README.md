@@ -25,6 +25,7 @@
 ```text
 .
 ├── app.py                                  # Streamlit 可视化应用
+├── dashboard_runtime.py                    # 首次请求的移动设备识别
 ├── dashboard_trends.py                     # 总体与分层趋势数据聚合
 ├── .streamlit/config.toml                  # Streamlit 本地展示配置
 ├── Dockerfile                              # 生产镜像定义
@@ -149,7 +150,7 @@ period,table_no,table_name,house_type,size_band,city,metric,base,value,change_pc
 ## 开发检查
 
 ```bash
-python3 -m py_compile scripts/fetch_stats.py dashboard_trends.py app.py
+python3 -m py_compile scripts/fetch_stats.py dashboard_runtime.py dashboard_trends.py app.py
 python3 -m unittest discover -s tests
 ```
 
