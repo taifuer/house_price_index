@@ -4,6 +4,7 @@ import html
 import inspect
 import os
 import re
+from collections.abc import Sequence
 from pathlib import Path
 
 import pandas as pd
@@ -13,7 +14,8 @@ from plotly.subplots import make_subplots
 import streamlit as st
 
 from dashboard_runtime import is_mobile_request
-from dashboard_trends import TREND_TIERS, build_overall_trend, build_tier_trend
+from dashboard_trends import build_overall_trend, build_tier_trend
+from housing_constants import METRIC_ORDER, SIZE_BAND_ORDER, TIER_MAP, TREND_TIERS
 
 
 DATA_PATH = Path("data/house_price_index_all.csv.gz")
@@ -51,8 +53,6 @@ if baidu_analytics_id:
         unsafe_allow_javascript=True,
     )
 
-SIZE_BAND_ORDER = ["全部", "90m2及以下", "90-144m2", "144m2以上"]
-METRIC_ORDER = ["环比", "同比", "累计平均"]
 RANK_TIER_OPTIONS = ["全部", "一线", "二线", "三线"]
 RANK_MOBILE_WINDOW = 10
 RANK_DESKTOP_WINDOW = 30
@@ -80,79 +80,6 @@ CHANGE_COLORSCALE = [
     [0.5, MISSING_COLOR],
     [1, UP_COLOR],
 ]
-# 国家统计局 70 个大中城市一二三线城市划分口径。
-TIER_MAP = {
-    "北京": "一线",
-    "上海": "一线",
-    "广州": "一线",
-    "深圳": "一线",
-    "天津": "二线",
-    "石家庄": "二线",
-    "太原": "二线",
-    "呼和浩特": "二线",
-    "沈阳": "二线",
-    "大连": "二线",
-    "长春": "二线",
-    "哈尔滨": "二线",
-    "南京": "二线",
-    "杭州": "二线",
-    "宁波": "二线",
-    "合肥": "二线",
-    "福州": "二线",
-    "厦门": "二线",
-    "南昌": "二线",
-    "济南": "二线",
-    "青岛": "二线",
-    "郑州": "二线",
-    "武汉": "二线",
-    "长沙": "二线",
-    "南宁": "二线",
-    "海口": "二线",
-    "重庆": "二线",
-    "成都": "二线",
-    "贵阳": "二线",
-    "昆明": "二线",
-    "西安": "二线",
-    "兰州": "二线",
-    "西宁": "二线",
-    "银川": "二线",
-    "乌鲁木齐": "二线",
-    "唐山": "三线",
-    "秦皇岛": "三线",
-    "包头": "三线",
-    "丹东": "三线",
-    "锦州": "三线",
-    "吉林": "三线",
-    "牡丹江": "三线",
-    "无锡": "三线",
-    "徐州": "三线",
-    "扬州": "三线",
-    "温州": "三线",
-    "金华": "三线",
-    "蚌埠": "三线",
-    "安庆": "三线",
-    "泉州": "三线",
-    "九江": "三线",
-    "赣州": "三线",
-    "烟台": "三线",
-    "济宁": "三线",
-    "洛阳": "三线",
-    "平顶山": "三线",
-    "宜昌": "三线",
-    "襄阳": "三线",
-    "岳阳": "三线",
-    "常德": "三线",
-    "韶关": "三线",
-    "湛江": "三线",
-    "惠州": "三线",
-    "桂林": "三线",
-    "北海": "三线",
-    "三亚": "三线",
-    "泸州": "三线",
-    "南充": "三线",
-    "遵义": "三线",
-    "大理": "三线",
-}
 
 
 @st.cache_data(max_entries=1)
@@ -173,7 +100,7 @@ def file_mtime_ns(path: Path) -> int:
     return path.stat().st_mtime_ns if path.exists() else 0
 
 
-def ordered_values(values: pd.Series, preferred_order: list[str]) -> list[str]:
+def ordered_values(values: pd.Series, preferred_order: Sequence[str]) -> list[str]:
     existing = set(values.dropna().astype(str))
     ordered = [value for value in preferred_order if value in existing]
     ordered.extend(sorted(existing - set(ordered)))

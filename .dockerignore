@@ -11,6 +11,11 @@ __pycache__
 *.md
 demo
 tests
-data/house_price_index_missing.json
-data/house_price_index_sample_history.csv
-data/debug_*.csv
+assets
+scripts
+*.py
+requirements.txt
+web/node_modules
+web/dist
+web/test-results
+web/playwright-report

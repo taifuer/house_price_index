@@ -2,8 +2,6 @@ services:
   app:
     build:
       context: .
-      args:
-        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
     container_name: house-price-index
     environment:
       BAIDU_ANALYTICS_ID: ${BAIDU_ANALYTICS_ID:-}

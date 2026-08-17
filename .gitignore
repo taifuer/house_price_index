@@ -11,6 +11,11 @@ env/
 
 .DS_Store
 
+web/node_modules/
+web/dist/
+web/test-results/
+web/playwright-report/
+
 # Temporary parser/debug outputs. Curated datasets may still be committed.
 data/debug_*.csv
 data/house_price_index_sample_history.csv

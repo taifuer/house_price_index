@@ -1,7 +1,7 @@
 # 全国 70 城商品住宅价格指数：项目工程复盘
 
-> 复盘范围：2026-05-31 至 2026-07-31 期间从项目初始化到 `v2.0.0` 的主要设计、实现、修正和部署过程。<br>
-> 文档日期：2026-08-01。<br>
+> 复盘范围：2026-05-31 至 2026-08-17 期间从项目初始化、`v2.0.0` 到静态前端重构的主要设计、实现、修正和部署过程。<br>
+> 文档日期：2026-08-17。<br>
 > 当前维护分支：`dev`。<br>
 > 项目仓库：[taifuer/house_price_index](https://github.com/taifuer/house_price_index)。<br>
 > 线上站点：[house.taifua.com](https://house.taifua.com/)。
@@ -12,14 +12,14 @@
 
 - 官方公开数据发现、抓取、历史页面解析和增量更新。
 - 可追溯的长表数据资产和 gzip 压缩发布格式。
-- 面向桌面端和移动端的 Streamlit 交互式看板。
+- 面向桌面端和移动端的 React + ECharts 静态交互式看板，以及迁移期保留的 Streamlit 回归版本。
 - 城市排名、涨跌分布、城市层级对比、整体趋势、分层趋势和城市趋势。
 - 缺失数据识别、覆盖度提示、来源原文链接和月份口径校准。
-- 语法检查、聚合测试、抓取回归测试、应用冒烟测试和 GitHub Actions CI。
-- Docker 镜像、Compose 编排、健康检查、日志轮转、Nginx 前置和生产环境配置隔离。
+- 语法检查、数据生成测试、聚合测试、抓取回归测试、Vitest 和 Playwright 浏览器回归。
+- Nginx 静态 Docker 镜像、Compose 编排、健康检查、日志轮转和生产环境配置隔离。
 - `dev` 分支、`v2.0.0` Tag、GitHub Release 和线上站点的同提交发布。
 
-当前数据资产包含 `168,904` 条记录、`160` 个有数据月份，覆盖 `2011-02` 至 `2026-06`。项目已经具备持续月度更新能力。
+当前数据资产包含 `170,584` 条记录、`161` 个有数据月份，覆盖 `2011-02` 至 `2026-07`。项目已经具备持续月度更新能力。
 
 这里的“完整”不等于“没有边界”：早期历史数据仍有客观缺口，国家统计局页面和搜索接口仍属于外部依赖，月度更新目前也没有完全自动化。这些限制被明确暴露，而不是被图表掩盖。
 
@@ -43,7 +43,7 @@
 
 当前版本有意不包含国际住宅价格指数和国际人口动态。它们的数据源本身质量较高，但与“全国 70 城商品住宅价格指数”主任务的关联不够直接，会增加页面长度、认知负担、数据口径解释和维护成本。
 
-项目也没有引入数据库、独立 API 服务或复杂前端框架。以当前约 17 万行、月度更新一次的数据量，压缩 CSV、Pandas 和 Streamlit 足够完成任务。增加基础设施并不会自动提高数据质量。
+项目没有引入数据库或独立 API 服务。当前约 17 万行数据在更新时由 Python 校验并转换为 24 个紧凑 JSON 矩阵，访问时直接由浏览器加载和计算；React/ECharts 解决的是首屏、移动交互和服务端资源问题，并不改变“增加基础设施不会自动提高数据质量”的原则。
 
 ## 3. 演进过程
 
@@ -105,6 +105,20 @@
 - 城市排名响应式范围滑块。
 - 生产服务器重建、健康检查和线上浏览器验收。
 
+### 3.6 第六阶段：从服务端看板迁移为静态前端
+
+2026-08-17 在保持数据口径和主要交互不变的前提下完成 React、TypeScript、Vite 和 ECharts 重构：
+
+- 长表 gzip CSV 继续作为权威发布资产，新增确定性脚本生成 24 个浏览器数据分片。
+- 页面骨架与图表代码分块加载，筛选只替换 URL 查询参数和所需分片，不触发整页刷新。
+- 全局筛选由 header 右侧按钮打开覆盖式抽屉，不再推动标题、图表和 footer，也不再维护侧栏拖拽宽度。
+- 排名、分布、层级对比、总体/分层趋势、城市趋势、来源链接、折叠和响应式交互全部迁移。
+- 生产容器改为 Nginx 静态服务，不再常驻 Python、Streamlit、Pandas 或 WebSocket 会话。
+- 百度统计改为容器启动时生成的小型运行时配置，生产环境仍只比仓库多一个 `.env` 值。
+- Playwright 固化桌面、移动端、筛选抽屉、无横向溢出、图表下载和全屏等回归场景。
+
+旧 `app.py` 暂时保留用于迁移期结果对照，但不再进入生产镜像。
+
 ## 4. 最终架构
 
 ```text
@@ -123,19 +137,26 @@
 长表标准化 -> 唯一键去重合并 -> 确定性 gzip CSV
         |
         v
-Streamlit + Pandas 聚合 + Plotly 图表
+静态数据生成器 -> manifest + 24 个 JSON 矩阵分片
         |
         v
-Docker Compose -> 127.0.0.1:8501 -> Nginx/TLS -> 公网站点
+React + ECharts 浏览器端聚合和图表
+        |
+        v
+Nginx 静态容器 -> 127.0.0.1:8501 -> 宿主机 Nginx/TLS -> 公网站点
 ```
 
 主要模块：
 
 - `scripts/fetch_stats.py`：发现、抓取、解析、校验、合并和导出。
+- `scripts/build_web_data.py`：校验长表并生成浏览器矩阵分片。
+- `housing_constants.py`：Python 数据链路共享的城市层级和指标顺序。
 - `dashboard_trends.py`：总体趋势和城市层级趋势的可测试聚合逻辑。
-- `app.py`：数据加载、筛选、图表、响应式 CSS 和必要的浏览器交互。
-- `data/house_price_index_all.csv.gz`：应用直接读取的发布数据。
-- `tests/`：抓取月份校准、趋势聚合和应用启动测试。
+- `web/`：React 页面、ECharts 图表、响应式样式、前端单测和 Playwright 测试。
+- `app.py`：迁移期保留的 Streamlit 回归版本。
+- `data/house_price_index_all.csv.gz`：权威长表发布数据。
+- `web/public/data/`：浏览器直接读取的 manifest 和数据分片。
+- `tests/`：抓取月份校准、趋势聚合和静态数据生成测试。
 - `Dockerfile`、`docker-compose.yml`、`DEPLOY.md`：生产运行约定。
 - `.github/workflows/ci.yml`：`dev` 分支和 PR 的持续集成。
 
@@ -497,6 +518,17 @@ tier_summary["city_tier"].astype("string").map(tier_rank).fillna(99).astype(int)
 
 同时在 groupby 中使用 `observed=True`，只聚合实际出现的分类。经验是：`category` 不是无成本替换，排序、填充和 groupby 都需要回归测试。
 
+### 8.5 静态化从根本上移除了会话内存
+
+前述优化适用于保留 Streamlit 的阶段，但生产页面本质上是公开、只读、月度更新的数据看板，不需要为每位访问者维持 Python 会话。静态重构后：
+
+- Nginx 只提供 HTML、哈希前端资源和约 `1.3 MiB` 的数据分片。
+- 浏览器按当前住宅类型、面积段和指标加载一个分片，筛选计算在客户端完成。
+- 访问次数不再创建 Streamlit session，也不会在服务器重复构建 Plotly 图对象。
+- 服务端内存不再随并发会话变化，扩展压力主要变成静态文件带宽和缓存命中率。
+
+这不是因为 Streamlit 无法用于数据应用，而是当前产品已经稳定为公开只读看板，静态架构与它的运行模型更匹配。
+
 ## 9. 前端和交互踩坑
 
 ### 9.1 视口识别导致 PC 首次刷新两次
@@ -516,6 +548,8 @@ Streamlit 服务端初次渲染时不知道浏览器宽度。早期实现无论�
 ```
 
 页头标题和 footer 分隔线均根据该变量调整。动态布局应跟随实际几何尺寸，而不是猜测组件状态。
+
+静态前端重构后进一步删除了这层复杂度：header 右侧筛选按钮打开覆盖式右抽屉，页面主体始终保持原宽度。对于本项目这种只有四个全局筛选项的只读看板，这比常驻或可调宽侧栏更符合实际使用频率。
 
 ### 9.3 原文链接放进标题栏并不只是换一行代码
 
@@ -596,17 +630,21 @@ Plotly 原生范围滑块在把选区拖到最左或最右边缘时，可能改�
 
 ### 10.1 当前自动化测试
 
-当前共有 6 项 unittest：
+当前自动化检查分为三层：
 
-- 2 项 Streamlit AppTest：无百度统计和有合法百度统计 ID 时均能启动。
-- 3 项趋势聚合测试：补齐缺失月份、分层分母、部分覆盖标记。
-- 1 项抓取回归测试：详情页推断月份与搜索月份不一致时进行校准。
+- 12 项 Python unittest：Streamlit 回归启动、趋势聚合、抓取月份校准和静态分片一致性。
+- 5 项 Vitest：城市排序、缺失月份、直方图和时间格式/范围。
+- 14 个 Playwright 桌面/移动项目场景，其中 12 个执行、2 个按设备条件跳过。
 
 CI 在 `dev` push 和面向 `dev` 的 pull request 上执行：
 
 ```bash
-python -m py_compile scripts/fetch_stats.py dashboard_trends.py app.py
+python -m py_compile scripts/fetch_stats.py scripts/build_web_data.py housing_constants.py dashboard_runtime.py dashboard_trends.py app.py
 python -m unittest discover -s tests -v
+cd web
+npm test
+npm run build
+npx playwright test
 ```
 
 ### 10.2 数据更新验收
@@ -625,16 +663,17 @@ python -m unittest discover -s tests -v
 
 ### 10.3 浏览器验收
 
-这次项目证明，仅靠 Python 测试不足以保证 Streamlit 页面正确。实际使用无头 Chromium 验证过：
+这次项目证明，仅靠数据和 Python 测试不足以保证可视化页面正确。仓库内 Playwright 使用无头 Chromium 固化验证：
 
 - `320`、`390`、`820`、`1440` 等视口。
 - 页面和主内容区 `clientWidth/scrollWidth`。
-- 侧边栏展开、收起和调整宽度。
+- Header 筛选按钮、右侧抽屉、恢复默认和打开前后主体位置不变。
+- 抽屉的 `Esc` 关闭、键盘焦点循环和移动端触控布局。
 - 原文图标是否真正位于标题右侧。
 - 移动端摘要是否四列排布。
 - 趋势按钮和图例是否重叠。
-- Plotly modebar 在不同设备上的按钮集合。
-- 排名滑块的鼠标、pointer 和 touch 拖动。
+- ECharts 工具按钮在不同设备上的集合。
+- 排名滑块的显示范围和移动端布局。
 - 选区到两侧边界时宽度是否保持。
 - 左右手柄是否仍能调整范围。
 - 页面控制台 error 和 warning。
@@ -650,7 +689,7 @@ python -m unittest discover -s tests -v
 - `v2.0.0^{}` 实际指向的 commit。
 - 服务器仓库 `HEAD`。
 - 容器是否基于新代码重建。
-- `/_stcore/health` 是否返回 `ok`。
+- `/healthz` 是否返回 `ok`。
 - 公网站点是否返回 HTTP 200。
 - 容器日志是否有异常。
 - 百度统计环境变量是否保留。
@@ -666,13 +705,13 @@ python -m unittest discover -s tests -v
 - 缺少历史表格和失效候选 URL 的 fixture。
 - 现代完整月份 1,680 条端到端解析测试。
 - 唯一键重复、gzip 确定性和 missing log 测试。
-- 将目前临时无头浏览器脚本整理为仓库内 Playwright 冒烟测试。
+- 增加少量图表数据语义断言，避免只验证 SVG 已出现。
 
 ## 11. 部署、版本和协作经验
 
 ### 11.1 `git pull` 不会自动更新正在运行的容器
 
-生产容器把 `app.py` 和数据 COPY 到镜像。服务器即使已经拉取最新代码，旧容器仍运行旧镜像。正确更新流程是：
+生产容器把构建后的前端和数据分片 COPY 到镜像。服务器即使已经拉取最新代码，旧容器仍运行旧镜像。正确更新流程是：
 
 ```bash
 git pull --ff-only origin dev
@@ -686,20 +725,18 @@ docker compose up -d --build --remove-orphans
 Dockerfile、Compose 和应用代码都进入 Git。生产差异只保存在未提交的 `.env`：
 
 - `BAIDU_ANALYTICS_ID`。
-- 国内可用的 `PIP_INDEX_URL`。
 
-百度统计 ID 在应用启动时校验为 32 位十六进制值。容器重建前后都核对环境变量，避免发布时意外丢失统计配置。
+百度统计 ID 在容器启动时校验为 32 位十六进制值并写入 `runtime-config.js`。容器重建前后都核对环境变量，避免发布时意外丢失统计配置。
 
 ### 11.3 Docker 配置中的有效细节
 
-- 基础镜像使用 `python:3.11-slim`。
-- Python 依赖锁定明确版本。
-- `pip install --no-cache-dir` 减少镜像层体积。
-- 使用 UID `10001` 的非 root 用户运行应用。
+- Node 22 只存在于构建阶段，运行阶段使用 `nginx:1.28-alpine`。
+- `npm ci` 根据 lockfile 构建，生产镜像不携带 Node、Python 或源代码依赖。
 - `init: true` 处理子进程和信号。
 - `restart: unless-stopped` 保证异常后恢复。
 - 只绑定 `127.0.0.1:8501`，由 Nginx 提供公网入口。
-- 容器内置 Streamlit healthcheck。
+- 容器内置静态 `/healthz` healthcheck。
+- HTML 和运行时配置不缓存，哈希资源长期缓存，数据分片短期缓存。
 - json-file 日志设置 `10m x 3` 轮转，避免磁盘无界增长。
 
 ### 11.4 Git 身份和 Co-Authored-By 必须在推送前检查
@@ -833,6 +870,8 @@ source_checksum
 10. **删除偏题的优质数据模块**：范围收敛本身是一项产品能力。
 11. **缓存上限 + category**：在不改变架构的情况下显著降低内存风险。
 12. **代码、Docker 和生产配置统一入库**：减少“服务器上是另一个版本”。
+13. **稳定只读页面改为静态交付**：消除会话内存、重复刷新和框架 DOM 补丁。
+14. **源 CSV 与浏览器分片双层资产**：既保留可分析长表，又控制页面传输和解析成本。
 
 ## 14. 当前技术债和后续优先级
 
@@ -845,9 +884,9 @@ source_checksum
 
 ### P1：降低前端维护风险
 
-- 将 1,889 行的 `app.py` 拆为数据加载、图表构建、样式和浏览器增强模块。
-- 把临时 Playwright 验收脚本整理为仓库内的最小 E2E 测试。
-- 为 Streamlit DOM 选择器增加版本升级检查。
+- 静态前端稳定运行一段时间后删除 Streamlit 回归实现及其专属依赖。
+- 为 manifest 和 shard 增加 schema 迁移约定，避免以后字段变化直接破坏旧缓存。
+- 为关键图表增加数据级断言和视觉快照基线。
 - 在页面或镜像中暴露 build commit，便于确认线上版本。
 
 ### P1：规范发布
@@ -858,7 +897,7 @@ source_checksum
 
 ### P2：可观测性和数据资产增强
 
-- 定期记录进程 RSS、容器重启次数和健康检查失败。
+- 定期记录容器内存、静态资源响应时间、容器重启次数和健康检查失败。
 - 视需要保存少量原始 HTML fixture 和来源 checksum，而不是保存全部原始页面。
 - 数据规模明显增长后再评估 Parquet；当前无需数据库化。
 - 国际住宅或人口数据若重新启用，建立独立页面和独立更新节奏。
@@ -879,11 +918,16 @@ source_checksum
 
 主要技术组件：
 
-- [Streamlit](https://streamlit.io/)
-- [Plotly Python](https://plotly.com/python/)
+- [React](https://react.dev/)
+- [Apache ECharts](https://echarts.apache.org/)
+- [Vite](https://vite.dev/)
+- [Playwright](https://playwright.dev/)
 - [Pandas](https://pandas.pydata.org/)
+- [Nginx](https://nginx.org/)
 - [Docker Compose](https://docs.docker.com/compose/)
 - [GitHub Actions](https://docs.github.com/actions)
+
+迁移期回归实现使用过 [Streamlit](https://streamlit.io/) 和 [Plotly Python](https://plotly.com/python/)。
 
 仓库内相关文档：
 
@@ -893,7 +937,7 @@ source_checksum
 
 ## 16. 最后的工程判断
 
-这个项目最可复用的部分不是某一个 Plotly 图或某一段 Streamlit CSS，而是以下组合：
+这个项目最可复用的部分不是某一个图表或某一段框架样式，而是以下组合：
 
 ```text
 权威来源
@@ -903,7 +947,8 @@ source_checksum
 + 幂等增量更新
 + 对缺口诚实的可视化
 + 设备相关的交互设计
-+ 有上限的缓存和可量化的内存优化
++ 与产品访问模型匹配的运行架构
++ 源数据和浏览器数据之间可验证的构建步骤
 + 同提交的 CI、Release 和生产部署
 ```
 

@@ -1,6 +1,6 @@
 # 全国 70 城商品住宅价格指数
 
-一个基于国家统计局“70 个大中城市商品住宅销售价格变动情况”的数据获取与交互式看板项目。项目将月度房价指数整理为长表 CSV，并用 Streamlit 展示城市排名、涨跌分布、城市层级对比和长期趋势。
+一个基于国家统计局“70 个大中城市商品住宅销售价格变动情况”的数据获取与交互式看板项目。项目将月度房价指数整理为长表 CSV，再生成紧凑的静态数据分片，由 React 和 Apache ECharts 展示城市排名、涨跌分布、城市层级对比和长期趋势。
 
 看板默认展示最新月份的二手住宅环比数据，支持切换月份、住宅类型、面积段和指标。整体趋势可在 70 城总量与一二三线城市分层占比之间切换，用统一口径观察不同城市层级的市场分化。
 
@@ -16,7 +16,7 @@
 
 ![](./demo/tier-trend.png)
 
-侧边栏筛选与数据说明：
+页头筛选入口与右侧抽屉：
 
 ![](./demo/sidebar.png)
 
@@ -24,16 +24,21 @@
 
 ```text
 .
-├── app.py                                  # Streamlit 可视化应用
-├── dashboard_runtime.py                    # 首次请求的移动设备识别
+├── app.py                                  # 迁移期保留的 Streamlit 版本
+├── housing_constants.py                    # 城市层级与指标顺序等共享配置
+├── dashboard_runtime.py                    # 旧版移动设备识别
 ├── dashboard_trends.py                     # 总体与分层趋势数据聚合
-├── .streamlit/config.toml                  # Streamlit 本地展示配置
+├── web/                                    # React、TypeScript、Vite、ECharts 前端
+│   ├── src/                                # 页面、组件、图表与数据计算
+│   └── public/data/                        # 浏览器端静态数据分片
 ├── Dockerfile                              # 生产镜像定义
 ├── docker-compose.yml                      # 单容器部署配置
+├── docker/                                 # Nginx 与运行时统计配置
 ├── DEPLOY.md                               # Docker 部署说明
 ├── PROJECT_RETROSPECTIVE.md                # 项目工程复盘与可复用方法
 ├── assets/favicon.ico                      # 房屋 favicon
 ├── scripts/fetch_stats.py                  # 数据获取、解析、导出 CLI
+├── scripts/build_web_data.py               # CSV 转静态矩阵分片
 ├── tests/                                   # 数据聚合与抓取回归测试
 ├── data/
 │   └── house_price_index_all.csv.gz        # 全历史长表数据（gzip 压缩 CSV）
@@ -47,6 +52,9 @@
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+
+cd web
+npm install
 ```
 
 ## 数据获取
@@ -67,7 +75,11 @@ python3 scripts/fetch_stats.py \
   --incremental \
   --existing data/house_price_index_all.csv.gz \
   --out data/house_price_index_all.csv.gz
+
+python3 scripts/build_web_data.py
 ```
+
+第二条命令会重新生成 `web/public/data/manifest.json` 和 24 个数据矩阵分片，并验证静态记录总数与长表一致。
 
 获取单个详情页：
 
@@ -89,28 +101,28 @@ python3 scripts/fetch_stats.py \
 ## 启动可视化
 
 ```bash
-streamlit run app.py
+cd web
+npm run dev
 ```
 
 Docker 部署及可选百度统计配置见 [`DEPLOY.md`](./DEPLOY.md)。
 
-应用会优先读取压缩后的全历史数据：
+前端开发服务器默认运行在 `http://localhost:5173`。生产构建与本地预览：
 
 ```bash
-data/house_price_index_all.csv.gz
+npm run build
+npm run preview
 ```
 
-如果只存在未压缩 CSV，也可以继续运行；应用会自动回退读取 `data/house_price_index_all.csv` 或 `data/house_price_index.csv`。
-
-如果端口被占用，可以换端口：
+生产页面只读取 `web/public/data/`，不需要常驻 Python、Streamlit 或 WebSocket 会话。迁移期保留旧版用于结果回归：
 
 ```bash
-streamlit run app.py --server.port 8502 --server.address 0.0.0.0
+streamlit run app.py
 ```
 
 ## 可视化功能
 
-首页默认展示最新月份的 `二手住宅` 环比数据。筛选项包括月份、住宅类型、面积段和指标；当前筛选标题右侧的外链图标可打开国家统计局原文。
+首页默认展示最新月份的 `二手住宅` 环比数据。页头右侧按钮可打开覆盖式筛选抽屉，调整月份、住宅类型、面积段和指标；抽屉不会压缩图表宽度，当前筛选标题右侧的外链图标可打开国家统计局原文。
 
 主要视图包括：
 
@@ -150,8 +162,13 @@ period,table_no,table_name,house_type,size_band,city,metric,base,value,change_pc
 ## 开发检查
 
 ```bash
-python3 -m py_compile scripts/fetch_stats.py dashboard_runtime.py dashboard_trends.py app.py
+python3 -m py_compile scripts/fetch_stats.py scripts/build_web_data.py housing_constants.py dashboard_runtime.py dashboard_trends.py app.py
 python3 -m unittest discover -s tests
+
+cd web
+npm test
+npm run build
+npx playwright test
 ```
 
 修改解析逻辑后，建议至少验证一个现代详情页和一个旧迁移页。

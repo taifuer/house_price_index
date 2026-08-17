@@ -4,8 +4,7 @@ from collections.abc import Mapping, Sequence
 
 import pandas as pd
 
-
-TREND_TIERS = ("一线", "二线", "三线")
+from housing_constants import TREND_TIERS
 
 
 def complete_month_index(frame: pd.DataFrame) -> list[str]:
