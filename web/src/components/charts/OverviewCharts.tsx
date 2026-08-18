@@ -143,6 +143,7 @@ export function RankingChart({ data, filePrefix }: OverviewChartProps) {
 }
 
 export function ExtremeChart({ data, filePrefix }: OverviewChartProps) {
+  const isMobile = useMediaQuery("(max-width: 767px)");
   const extremes = useMemo(() => {
     const selected = [...data.slice(0, 5), ...data.slice(-5)];
     return [...new Map(selected.map((datum) => [datum.city, datum])).values()].sort((a, b) => a.change - b.change);
@@ -151,7 +152,7 @@ export function ExtremeChart({ data, filePrefix }: OverviewChartProps) {
   const option = useMemo<EChartsCoreOption>(() => ({
     animationDuration: 350,
     aria: { enabled: true, description: "价格变动最高和最低城市对比" },
-    grid: { left: 66, right: 34, top: 18, bottom: 42 },
+    grid: { left: isMobile ? 84 : 66, right: 34, top: 44, bottom: 42 },
     tooltip: {
       trigger: "item",
       formatter: (raw: unknown) => {
@@ -172,14 +173,23 @@ export function ExtremeChart({ data, filePrefix }: OverviewChartProps) {
     yAxis: {
       type: "category",
       data: extremes.map((datum) => datum.city),
-      axisLabel: { ...axisLabelStyle, color: COLORS.text },
+      axisLabel: { ...axisLabelStyle, color: COLORS.text, margin: isMobile ? 26 : 8 },
       axisLine: { show: false },
       axisTick: { show: false },
     },
     series: [{
       type: "bar",
       barMaxWidth: 22,
-      data: extremes.map((datum) => ({ value: datum.change, itemStyle: { color: changeColor(datum.change, maximum) } })),
+      data: extremes.map((datum) => {
+        const placeInside = datum.change < 0 && Math.abs(datum.change) >= maximum * 0.18;
+        return {
+          value: datum.change,
+          itemStyle: { color: changeColor(datum.change, maximum) },
+          label: placeInside
+            ? { position: "insideLeft", color: "#ffffff", distance: 5 }
+            : { position: "outside", color: COLORS.muted, distance: 5 },
+        };
+      }),
       label: {
         show: true,
         position: "outside",
@@ -188,7 +198,7 @@ export function ExtremeChart({ data, filePrefix }: OverviewChartProps) {
       },
       markLine: { silent: true, symbol: "none", label: { show: false }, data: [{ xAxis: 0 }], lineStyle: { color: COLORS.baseline } },
     }],
-  }), [extremes, maximum]);
+  }), [extremes, isMobile, maximum]);
   return (
     <div className="chart-block compact-chart">
       <h3>首尾城市对比</h3>

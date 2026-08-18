@@ -1,4 +1,55 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+
+function extremeChart(page: Page): Locator {
+  return page.locator(".compact-chart").filter({
+    has: page.getByRole("heading", { name: "首尾城市对比" }),
+  });
+}
+
+async function findExtremeLabelOverlaps(chart: Locator): Promise<string[]> {
+  return chart.locator(".chart-canvas svg").evaluate((svg) => {
+    const labels = [...svg.querySelectorAll("text")].map((element) => ({
+      text: element.textContent?.trim() ?? "",
+      rect: element.getBoundingClientRect(),
+    }));
+    const cities = labels.filter(({ text }) => /^[\p{Script=Han}]{2,4}$/u.test(text));
+    const values = labels.filter(({ text }) => /^[+-]?\d+(?:\.\d+)?$/.test(text));
+    return cities.flatMap((city) => values.flatMap((value) => {
+      const verticalOverlap = Math.min(city.rect.bottom, value.rect.bottom)
+        - Math.max(city.rect.top, value.rect.top);
+      const horizontalOverlap = Math.min(city.rect.right, value.rect.right)
+        - Math.max(city.rect.left, value.rect.left);
+      return verticalOverlap > 0 && horizontalOverlap > 0
+        ? [`${city.text}:${value.text}`]
+        : [];
+    }));
+  });
+}
+
+async function findExtremeActionOverlaps(chart: Locator): Promise<string[]> {
+  const actionBox = await chart.locator(".chart-actions").boundingBox();
+  if (!actionBox) return [];
+  const action = {
+    left: actionBox.x,
+    top: actionBox.y,
+    right: actionBox.x + actionBox.width,
+    bottom: actionBox.y + actionBox.height,
+  };
+  return chart.locator(".chart-canvas svg").evaluate((svg, actionRect) => (
+    [...svg.querySelectorAll("text")]
+      .filter((element) => /^[+-]?\d+(?:\.\d+)?$/.test(element.textContent?.trim() ?? ""))
+      .flatMap((element) => {
+        const rect = element.getBoundingClientRect();
+        const verticalOverlap = Math.min(rect.bottom, actionRect.bottom)
+          - Math.max(rect.top, actionRect.top);
+        const horizontalOverlap = Math.min(rect.right, actionRect.right)
+          - Math.max(rect.left, actionRect.left);
+        return verticalOverlap > 0 && horizontalOverlap > 0
+          ? [element.textContent?.trim() ?? ""]
+          : [];
+      })
+  ), action);
+}
 
 test.beforeEach(async ({ page }) => {
   const errors: string[] = [];
@@ -58,6 +109,9 @@ test("renders the complete default dashboard without horizontal overflow", async
   const flatLabels = tierComparison.locator(".chart-canvas svg text").filter({ hasText: /^持平 \d+$/ });
   await expect(flatLabels).toHaveCount(0);
 
+  expect(await findExtremeLabelOverlaps(extremeChart(page))).toEqual([]);
+  expect(await findExtremeActionOverlaps(extremeChart(page))).toEqual([]);
+
   const barCenters = await tierComparison.locator(".chart-canvas svg").evaluate((svg) => {
     const centers = (color: string) => [...svg.querySelectorAll(`[fill="${color}"]`)]
       .map((element) => element.getBoundingClientRect())
@@ -84,6 +138,24 @@ test("renders the complete default dashboard without horizontal overflow", async
   await tierComparison.screenshot({ path: `/tmp/house-v4-tier-comparison-hover-${testInfo.project.name}.png` });
   await page.mouse.move(0, 0);
   await page.locator(".app-footer").screenshot({ path: `/tmp/house-v4-footer-${testInfo.project.name}.png` });
+});
+
+test("keeps extreme labels separated on narrow mobile charts", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile", "mobile-only label spacing assertion");
+  await page.setViewportSize({ width: 320, height: 844 });
+  const cases = [
+    "?view=resale-all-mom&period=2026-07",
+    "?view=resale-90-144-mom&period=2016-05",
+    "?view=resale-90-144-average&period=2018-05",
+  ];
+  for (const search of cases) {
+    await page.goto(`/${search}`);
+    const chart = extremeChart(page);
+    await expect(chart.locator(".chart-canvas svg")).toBeVisible();
+    await page.waitForTimeout(400);
+    expect(await findExtremeLabelOverlaps(chart)).toEqual([]);
+    expect(await findExtremeActionOverlaps(chart)).toEqual([]);
+  }
 });
 
 test("updates filters without a document reload", async ({ page }) => {
