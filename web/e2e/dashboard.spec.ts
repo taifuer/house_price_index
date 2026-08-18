@@ -51,6 +51,35 @@ async function findExtremeActionOverlaps(chart: Locator): Promise<string[]> {
   ), action);
 }
 
+async function findYearLabelOverlaps(chart: Locator): Promise<string[]> {
+  return chart.locator(".chart-canvas svg").evaluate((svg) => {
+    const labels = [...svg.querySelectorAll("text")]
+      .filter((element) => /^20\d{2}年$/.test(element.textContent?.trim() ?? ""))
+      .map((element) => ({
+        text: element.textContent?.trim() ?? "",
+        rect: element.getBoundingClientRect(),
+      }));
+    return labels.flatMap((label, index) => labels.slice(index + 1).flatMap((next) => {
+      const verticalOverlap = Math.min(label.rect.bottom, next.rect.bottom)
+        - Math.max(label.rect.top, next.rect.top);
+      const horizontalOverlap = Math.min(label.rect.right, next.rect.right)
+        - Math.max(label.rect.left, next.rect.left);
+      return verticalOverlap > 0 && horizontalOverlap > 0
+        ? [`${label.text}:${next.text}`]
+        : [];
+    }));
+  });
+}
+
+async function expectMobileYearLabels(chart: Locator, firstYear: string): Promise<void> {
+  const labels = chart.locator(".chart-canvas svg text").filter({ hasText: /^20\d{2}年$/ });
+  await expect(labels.first()).toHaveText(firstYear);
+  await expect(labels.last()).toHaveText("2026年");
+  await expect.poll(() => findYearLabelOverlaps(chart)).toEqual([]);
+  const text = await labels.allTextContents();
+  expect(text.length).toBeLessThanOrEqual(6);
+}
+
 test.beforeEach(async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (message) => {
@@ -155,6 +184,29 @@ test("keeps extreme labels separated on narrow mobile charts", async ({ page }, 
     await page.waitForTimeout(400);
     expect(await findExtremeLabelOverlaps(chart)).toEqual([]);
     expect(await findExtremeActionOverlaps(chart)).toEqual([]);
+  }
+});
+
+test("keeps full-history year labels separated on narrow mobile charts", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile", "mobile-only year label spacing assertion");
+  await page.setViewportSize({ width: 320, height: 844 });
+  const cases = [
+    { view: "resale-all-mom", firstYear: "2011年" },
+    { view: "resale-under-90-mom", firstYear: "2011年" },
+    { view: "new-under-90-mom", firstYear: "2018年" },
+  ];
+  for (const item of cases) {
+    await page.goto(`/?view=${item.view}&period=2026-07`);
+    const cityTrend = page.locator(".city-trend-chart");
+    await cityTrend.getByRole("button", { name: "全部", exact: true }).click();
+    await expectMobileYearLabels(cityTrend, item.firstYear);
+
+    const overallTrend = page.locator(".overall-trend-chart");
+    await overallTrend.getByRole("button", { name: "全部", exact: true }).click();
+    await expectMobileYearLabels(overallTrend, item.firstYear);
+    await overallTrend.getByRole("button", { name: "分层", exact: true }).click();
+    await expect(overallTrend.locator(".chart-canvas svg text").filter({ hasText: /^一线（4 城）$/ })).toHaveCount(1);
+    await expectMobileYearLabels(overallTrend, item.firstYear);
   }
 });
 

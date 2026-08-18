@@ -18,16 +18,27 @@ const rangeOptions: ReadonlyArray<{ value: TrendRange; label: string }> = [
   { value: "10y", label: "近10年" },
 ];
 
+const MOBILE_MAX_YEAR_LABELS = 6;
+
 interface TrendProps {
   manifest: Manifest;
   shard: DatasetShard;
   filePrefix: string;
 }
 
-function yearAxis(periods: string[], show = true, yearStep = 1) {
+function yearAxis(periods: string[], show = true, maximumLabels?: number) {
   const allFirstPeriods = [...firstPeriodByYear(periods)];
+  const labelLimit = Math.max(maximumLabels ?? allFirstPeriods.length, 2);
+  const yearStep = allFirstPeriods.length > labelLimit
+    ? Math.ceil((allFirstPeriods.length - 1) / (labelLimit - 1))
+    : 1;
+  const lastIndex = allFirstPeriods.length - 1;
   const firstPeriods = new Set(
-    allFirstPeriods.filter((_, index) => index % yearStep === 0 || index === allFirstPeriods.length - 1),
+    allFirstPeriods.filter((_, index) => (
+      index === 0
+      || index === lastIndex
+      || (index % yearStep === 0 && lastIndex - index >= yearStep)
+    )),
   );
   return {
     type: "category" as const,
@@ -38,6 +49,7 @@ function yearAxis(periods: string[], show = true, yearStep = 1) {
       ...axisLabelStyle,
       show,
       interval: 0,
+      hideOverlap: true,
       formatter: (period: string) => (firstPeriods.has(period) ? `${period.slice(0, 4)}年` : ""),
     },
   };
@@ -76,7 +88,7 @@ export function OverallTrendChart({ manifest, shard, filePrefix }: TrendProps) {
             : "";
         },
       },
-      xAxis: yearAxis(visiblePeriods, true, isMobile ? 2 : 1),
+      xAxis: yearAxis(visiblePeriods, true, isMobile ? MOBILE_MAX_YEAR_LABELS : undefined),
       yAxis: {
         type: "value",
         min: -manifest.cities.length,
@@ -100,7 +112,7 @@ export function OverallTrendChart({ manifest, shard, filePrefix }: TrendProps) {
     const tierStep = isMobile ? 199 : 184;
     const grids = tiers.map((_, index) => ({ left: 56, right: 18, top: 40 + index * tierStep, height: 142 }));
     const axes = tiers.map((_, index) => ({
-      ...yearAxis(visiblePeriods, index === tiers.length - 1, isMobile ? 2 : 1),
+      ...yearAxis(visiblePeriods, index === tiers.length - 1, isMobile ? MOBILE_MAX_YEAR_LABELS : undefined),
       gridIndex: index,
     }));
     return {
@@ -233,7 +245,7 @@ export function CityTrendChart({
     },
     grid: { left: 52, right: 18, top: 24, bottom: isMobile ? 60 : 82 },
     tooltip: { trigger: "axis", borderColor: "#d0d5dd", valueFormatter: (value: unknown) => value == null ? "无数据" : formatPct(Number(value)) },
-    xAxis: yearAxis(visiblePeriods, true, isMobile ? 2 : 1),
+    xAxis: yearAxis(visiblePeriods, true, isMobile ? MOBILE_MAX_YEAR_LABELS : undefined),
     yAxis: {
       type: "value",
       axisLabel: { ...axisLabelStyle, formatter: (value: number) => value.toFixed(1) },
