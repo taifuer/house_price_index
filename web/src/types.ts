@@ -1,5 +1,6 @@
 export type CityTier = "一线" | "二线" | "三线";
 export type TrendRange = "all" | "3y" | "5y" | "10y";
+export type TrendMode = "overall" | "tier" | "breadth";
 
 export interface CityDefinition {
   name: string;
@@ -13,11 +14,24 @@ export interface DatasetDescriptor {
   metric: string;
   path: string;
   periods: string[];
+  periodCoverage: number[];
   recordCount: number;
+  coverage: DatasetCoverage;
+}
+
+export interface DatasetCoverage {
+  firstPeriod: string;
+  lastPeriod: string;
+  publishedMonths: number;
+  completeMonths: number;
+  partialMonths: number;
+  unpublishedMonths: number;
+  lastCompletePeriod: string | null;
 }
 
 export interface Manifest {
   schemaVersion: number;
+  generatedAt: string;
   title: string;
   recordCount: number;
   periodRange: [string, string];
@@ -70,9 +84,7 @@ export interface TierTrendDatum extends OverallTrendDatum {
   downPct: number;
 }
 
-export interface HistogramBin {
-  left: number;
-  right: number;
-  midpoint: number;
+export interface FrequencyDatum {
+  value: number;
   count: number;
 }

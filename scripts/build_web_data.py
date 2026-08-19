@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -68,6 +69,12 @@ def dataset_id(house_type: str, size_band: str, metric: str) -> str:
         raise ValueError(f"缺少静态数据文件名映射：{error.args[0]}") from error
 
 
+def complete_months(start: str, end: str) -> list[str]:
+    start_period = pd.Period(start, freq="M")
+    end_period = pd.Period(end, freq="M")
+    return [str(period) for period in pd.period_range(start_period, end_period, freq="M")]
+
+
 def validate_source(frame: pd.DataFrame) -> pd.DataFrame:
     missing_columns = sorted(REQUIRED_COLUMNS - set(frame.columns))
     if missing_columns:
@@ -125,6 +132,22 @@ def build_web_data(frame: pd.DataFrame, output_dir: Path) -> dict[str, Any]:
                     [None if pd.isna(value) else round(float(value), 1) for value in row]
                     for row in matrix.to_numpy()
                 ]
+                period_coverage = matrix.notna().sum(axis=1).astype(int).tolist()
+                full_periods = complete_months(periods[0], periods[-1])
+                complete_periods = [
+                    period
+                    for period, count in zip(periods, period_coverage, strict=True)
+                    if count == len(cities)
+                ]
+                coverage = {
+                    "firstPeriod": periods[0],
+                    "lastPeriod": periods[-1],
+                    "publishedMonths": len(periods),
+                    "completeMonths": len(complete_periods),
+                    "partialMonths": sum(0 < count < len(cities) for count in period_coverage),
+                    "unpublishedMonths": len(full_periods) - len(periods),
+                    "lastCompletePeriod": complete_periods[-1] if complete_periods else None,
+                }
                 source_rows: list[dict[str, str]] = []
                 for period in periods:
                     period_rows = scoped[scoped["period"] == period]
@@ -157,7 +180,9 @@ def build_web_data(frame: pd.DataFrame, output_dir: Path) -> dict[str, Any]:
                         "metric": metric,
                         "path": relative_path,
                         "periods": periods,
+                        "periodCoverage": period_coverage,
                         "recordCount": record_count,
+                        "coverage": coverage,
                     }
                 )
 
@@ -168,7 +193,8 @@ def build_web_data(frame: pd.DataFrame, output_dir: Path) -> dict[str, Any]:
     if default_id not in {dataset["id"] for dataset in datasets}:
         default_id = datasets[0]["id"]
     manifest = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
+        "generatedAt": datetime.now(UTC).replace(microsecond=0).isoformat(),
         "title": "全国 70 城商品住宅价格指数",
         "recordCount": len(data),
         "periodRange": [str(data["period"].min()), str(data["period"].max())],

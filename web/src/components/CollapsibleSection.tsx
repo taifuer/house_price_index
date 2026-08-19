@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 
 interface CollapsibleSectionProps {
   title: string;
+  meta?: string;
   children: ReactNode;
   actions?: ReactNode;
   defaultOpen?: boolean;
@@ -11,6 +12,7 @@ interface CollapsibleSectionProps {
 
 export function CollapsibleSection({
   title,
+  meta,
   children,
   actions,
   defaultOpen = true,
@@ -28,9 +30,14 @@ export function CollapsibleSection({
           aria-controls={sectionId}
         >
           {open ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
-          <span>{title}</span>
+          <span className="section-title-label">{title}</span>
         </button>
-        {actions && <div className="section-actions">{actions}</div>}
+        {(meta || actions) && (
+          <div className="section-meta-row">
+            {meta && <span className="section-title-meta">{meta}</span>}
+            {actions && <div className="section-actions">{actions}</div>}
+          </div>
+        )}
       </div>
       {open && (
         <div id={sectionId} className="section-content">

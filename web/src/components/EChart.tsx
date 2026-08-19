@@ -12,7 +12,7 @@ import {
 import * as echarts from "echarts/core";
 import type { EChartsCoreOption, EChartsType } from "echarts/core";
 import { SVGRenderer } from "echarts/renderers";
-import { Camera, Maximize2, Minimize2, RotateCcw } from "lucide-react";
+import { Download, Maximize2, Minimize2, RotateCcw } from "lucide-react";
 
 import { useMediaQuery } from "../hooks/useMediaQuery";
 
@@ -75,13 +75,43 @@ export function EChart({ option, height, ariaLabel, fileName, showReset = false,
     return () => document.removeEventListener("fullscreenchange", updateFullscreenState);
   }, []);
 
-  const download = () => {
+  const download = async () => {
     const chart = chartRef.current;
     if (!chart) return;
+    const width = chart.getWidth();
+    const height = chart.getHeight();
+    const image = new Image();
+    const source = chart.getDataURL({ backgroundColor: "#ffffff" });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error("图表图像生成失败"));
+        image.src = source;
+      });
+    } catch {
+      return;
+    }
+
+    // The SVG renderer ignores getDataURL({ type: "png" }), so rasterize explicitly.
+    const pixelRatio = 2;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(width * pixelRatio);
+    canvas.height = Math.round(height * pixelRatio);
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.scale(pixelRatio, pixelRatio);
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
+    context.drawImage(image, 0, 0, width, height);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!blob) return;
+
     const anchor = document.createElement("a");
-    anchor.href = chart.getDataURL({ type: "svg", backgroundColor: "#ffffff" });
-    anchor.download = `${fileName}.svg`;
+    const objectUrl = URL.createObjectURL(blob);
+    anchor.href = objectUrl;
+    anchor.download = `${fileName}.png`;
     anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
   };
 
   const toggleFullscreen = async () => {
@@ -99,16 +129,16 @@ export function EChart({ option, height, ariaLabel, fileName, showReset = false,
 
   return (
     <div ref={wrapperRef} className={`chart-shell ${className}`.trim()}>
-      <div className="chart-actions" aria-label="图表操作">
-        {showReset && (
-          <button type="button" onClick={reset} title="重置视图" aria-label="重置视图">
-            <RotateCcw size={16} strokeWidth={1.8} />
+      {!isMobile && (
+        <div className="chart-actions" aria-label="图表操作">
+          {showReset && (
+            <button type="button" onClick={reset} title="重置视图" aria-label="重置视图">
+              <RotateCcw size={16} strokeWidth={1.8} />
+            </button>
+          )}
+          <button type="button" onClick={() => void download()} title="下载图表" aria-label="下载图表">
+            <Download size={16} strokeWidth={1.8} />
           </button>
-        )}
-        <button type="button" onClick={download} title="下载图表" aria-label="下载图表">
-          <Camera size={16} strokeWidth={1.8} />
-        </button>
-        {!isMobile && (
           <button
             type="button"
             onClick={toggleFullscreen}
@@ -119,8 +149,8 @@ export function EChart({ option, height, ariaLabel, fileName, showReset = false,
               ? <Minimize2 size={16} strokeWidth={1.8} />
               : <Maximize2 size={16} strokeWidth={1.8} />}
           </button>
-        )}
-      </div>
+        </div>
+      )}
       <div
         ref={canvasRef}
         className="chart-canvas"

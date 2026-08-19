@@ -4,8 +4,8 @@ import type { EChartsCoreOption } from "echarts/core";
 import { EChart } from "../EChart";
 import { Segmented } from "../Segmented";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
-import { buildHistogram } from "../../lib/data";
-import { formatPct } from "../../lib/format";
+import { buildFrequencyDistribution } from "../../lib/data";
+import { formatMetric, formatPct, metricAxisName, roundOne } from "../../lib/format";
 import {
   axisLabelStyle,
   axisLineStyle,
@@ -35,9 +35,10 @@ function paddedAxisMaximum({ min, max }: AxisExtent): number {
 interface OverviewChartProps {
   data: CityDatum[];
   filePrefix: string;
+  metric: string;
 }
 
-export function RankingChart({ data, filePrefix }: OverviewChartProps) {
+export function RankingChart({ data, filePrefix, metric }: OverviewChartProps) {
   const isMobile = useMediaQuery("(max-width: 767px)");
   const [tier, setTier] = useState<TierFilter>("全部");
   const visible = useMemo(
@@ -49,7 +50,7 @@ export function RankingChart({ data, filePrefix }: OverviewChartProps) {
   const option = useMemo<EChartsCoreOption>(() => ({
     animationDuration: 350,
     aria: { enabled: true, description: "按价格变动从高到低排列的城市柱状图" },
-    grid: { left: isMobile ? 42 : 54, right: 18, top: 30, bottom: isMobile ? 96 : 118 },
+    grid: { left: isMobile ? 52 : 64, right: 18, top: 30, bottom: isMobile ? 96 : 118 },
     tooltip: {
       trigger: "item",
       borderColor: "#d0d5dd",
@@ -72,8 +73,12 @@ export function RankingChart({ data, filePrefix }: OverviewChartProps) {
       type: "value",
       min: paddedAxisMinimum,
       max: paddedAxisMaximum,
-      axisLabel: { ...axisLabelStyle, formatter: (value: number) => value.toFixed(1) },
+      axisLabel: { ...axisLabelStyle, formatter: (value: number) => `${value.toFixed(1)}%` },
       splitLine: { lineStyle: splitLineStyle },
+      name: metricAxisName(metric),
+      nameLocation: "middle",
+      nameGap: isMobile ? 42 : 48,
+      nameTextStyle: axisLabelStyle,
     },
     dataZoom: visible.length > windowSize ? [{
       type: "slider",
@@ -118,7 +123,7 @@ export function RankingChart({ data, filePrefix }: OverviewChartProps) {
         data: [{ yAxis: 0 }],
       },
     }],
-  }), [isMobile, maximum, visible, windowSize]);
+  }), [isMobile, maximum, metric, visible, windowSize]);
 
   return (
     <div className="chart-block ranking-chart">
@@ -142,7 +147,7 @@ export function RankingChart({ data, filePrefix }: OverviewChartProps) {
   );
 }
 
-export function ExtremeChart({ data, filePrefix }: OverviewChartProps) {
+export function ExtremeChart({ data, filePrefix, metric }: OverviewChartProps) {
   const isMobile = useMediaQuery("(max-width: 767px)");
   const extremes = useMemo(() => {
     const selected = [...data.slice(0, 5), ...data.slice(-5)];
@@ -163,9 +168,9 @@ export function ExtremeChart({ data, filePrefix }: OverviewChartProps) {
     },
     xAxis: {
       type: "value",
-      axisLabel: axisLabelStyle,
+      axisLabel: { ...axisLabelStyle, formatter: (value: number) => `${value.toFixed(1)}%` },
       splitLine: { lineStyle: splitLineStyle },
-      name: "较基期变动",
+      name: metricAxisName(metric),
       nameLocation: "middle",
       nameGap: 28,
       nameTextStyle: axisLabelStyle,
@@ -198,7 +203,7 @@ export function ExtremeChart({ data, filePrefix }: OverviewChartProps) {
       },
       markLine: { silent: true, symbol: "none", label: { show: false }, data: [{ xAxis: 0 }], lineStyle: { color: COLORS.baseline } },
     }],
-  }), [extremes, isMobile, maximum]);
+  }), [extremes, isMobile, maximum, metric]);
   return (
     <div className="chart-block compact-chart">
       <h3>首尾城市对比</h3>
@@ -207,39 +212,37 @@ export function ExtremeChart({ data, filePrefix }: OverviewChartProps) {
   );
 }
 
-export function DistributionChart({ data, filePrefix }: OverviewChartProps) {
-  const bins = useMemo(() => buildHistogram(data.map((datum) => datum.change), 18), [data]);
+export function DistributionChart({ data, filePrefix, metric }: OverviewChartProps) {
+  const frequencies = useMemo(
+    () => buildFrequencyDistribution(data.map((datum) => datum.change)),
+    [data],
+  );
   const maximum = Math.max(...data.map((datum) => Math.abs(datum.change)), 0.1);
-  const zeroIndex = bins.findIndex((bin) => bin.left <= 0 && bin.right >= 0);
+  const minimumValue = Math.min(...frequencies.map((datum) => datum.value), 0);
+  const maximumValue = Math.max(...frequencies.map((datum) => datum.value), 0);
   const option = useMemo<EChartsCoreOption>(() => ({
     animationDuration: 350,
-    aria: { enabled: true, description: "城市价格涨跌幅直方分布" },
-    grid: { left: 48, right: 18, top: 18, bottom: 58 },
+    aria: { enabled: true, description: "按统计局公布的精确涨跌幅统计城市数量" },
+    grid: { left: 48, right: 18, top: 30, bottom: 64 },
     tooltip: {
       trigger: "item",
       formatter: (raw: unknown) => {
-        const params = raw as { dataIndex: number };
-        const bin = bins[params.dataIndex];
-        return bin ? `变动区间 ${bin.left.toFixed(1)} 至 ${bin.right.toFixed(1)}<br/>城市数 ${bin.count}<br/>区间中点 ${bin.midpoint.toFixed(2)}` : "";
+        const params = raw as { value: [number, number] };
+        const [value, count] = params.value;
+        return `${formatMetric(metric)} ${formatPct(value)}<br/>城市数 ${count}`;
       },
     },
     xAxis: {
-      type: "category",
-      data: bins.map((_, index) => index),
+      type: "value",
+      min: roundOne(minimumValue - 0.1),
+      max: roundOne(maximumValue + 0.1),
+      minInterval: 0.1,
       axisLine: { lineStyle: axisLineStyle },
       axisTick: { show: false },
-      axisLabel: {
-        ...axisLabelStyle,
-        formatter: (_value: string, index: number) => {
-          if (index === 0) return bins[0]?.left.toFixed(1) ?? "";
-          if (index === bins.length - 1) return bins.at(-1)?.right.toFixed(1) ?? "";
-          if (index === zeroIndex) return "0";
-          return "";
-        },
-      },
-      name: "较基期变动",
+      axisLabel: { ...axisLabelStyle, formatter: (value: number) => `${value.toFixed(1)}%` },
+      name: metricAxisName(metric),
       nameLocation: "middle",
-      nameGap: 34,
+      nameGap: 40,
       nameTextStyle: axisLabelStyle,
     },
     yAxis: {
@@ -250,19 +253,40 @@ export function DistributionChart({ data, filePrefix }: OverviewChartProps) {
       name: "城市数",
       nameTextStyle: axisLabelStyle,
     },
-    series: [{
-      type: "bar",
-      barCategoryGap: "0%",
-      data: bins.map((bin) => ({ value: bin.count, itemStyle: { color: changeColor(bin.midpoint, maximum) } })),
-      markLine: zeroIndex >= 0 ? {
+    series: [
+      {
+        type: "bar",
+        data: frequencies.map((datum) => ({
+          value: [datum.value, datum.count],
+          itemStyle: { color: changeColor(datum.value, maximum) },
+        })),
+        encode: { x: 0, y: 1 },
+        barMaxWidth: 28,
+        barMinHeight: 1,
+        label: {
+          show: true,
+          position: "top",
+          distance: 4,
+          color: COLORS.muted,
+          fontSize: 10,
+          formatter: (raw: unknown) => String((raw as { value: [number, number] }).value[1]),
+        },
+        labelLayout: { hideOverlap: true },
+      },
+      {
+        type: "line",
+        data: [],
         silent: true,
-        symbol: "none",
-        label: { show: false },
-        lineStyle: { color: COLORS.baseline },
-        data: [{ xAxis: zeroIndex }],
-      } : undefined,
-    }],
-  }), [bins, maximum, zeroIndex]);
+        markLine: {
+          silent: true,
+          symbol: "none",
+          label: { show: false },
+          lineStyle: { color: COLORS.baseline },
+          data: [{ xAxis: 0 }],
+        },
+      },
+    ],
+  }), [frequencies, maximum, maximumValue, metric, minimumValue]);
   return (
     <div className="chart-block compact-chart">
       <h3>城市涨跌分布</h3>
@@ -282,7 +306,7 @@ interface TierSummary {
   maximum: number;
 }
 
-export function TierComparisonChart({ data, filePrefix }: OverviewChartProps) {
+export function TierComparisonChart({ data, filePrefix, metric }: OverviewChartProps) {
   const isMobile = useMediaQuery("(max-width: 767px)");
   const summaries = useMemo<TierSummary[]>(() => (["一线", "二线", "三线"] as CityTier[]).map((tier) => {
     const values = data.filter((datum) => datum.tier === tier).map((datum) => datum.change);
@@ -345,7 +369,7 @@ export function TierComparisonChart({ data, filePrefix }: OverviewChartProps) {
         max: changeLimit,
         axisLabel: { ...axisLabelStyle, formatter: (value: number) => value.toFixed(1) },
         splitLine: { lineStyle: splitLineStyle },
-        name: "较基期变动",
+        name: metricAxisName(metric),
         nameLocation: "middle",
         nameGap: 30,
         nameTextStyle: axisLabelStyle,
@@ -432,7 +456,7 @@ export function TierComparisonChart({ data, filePrefix }: OverviewChartProps) {
         },
       },
     ],
-  }), [changeLimit, countGrid, countLimit, isMobile, rangeGrid, summaries]);
+  }), [changeLimit, countGrid, countLimit, isMobile, metric, rangeGrid, summaries]);
 
   return (
     <div className="chart-block tier-comparison-chart">

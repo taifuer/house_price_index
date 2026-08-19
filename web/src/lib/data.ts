@@ -3,7 +3,7 @@ import type {
   CityTier,
   DatasetDescriptor,
   DatasetShard,
-  HistogramBin,
+  FrequencyDatum,
   Manifest,
   OverallTrendDatum,
   TierTrendDatum,
@@ -109,23 +109,19 @@ export function buildTierTrend(manifest: Manifest, shard: DatasetShard): TierTre
   });
 }
 
-export function buildHistogram(values: number[], binCount = 18): HistogramBin[] {
-  if (values.length === 0 || binCount < 1) return [];
-  const minimum = Math.min(...values);
-  const maximum = Math.max(...values);
-  const width = maximum === minimum ? 1 : (maximum - minimum) / binCount;
-  const bins = Array.from({ length: binCount }, (_, index) => ({
-    left: minimum + index * width,
-    right: index === binCount - 1 ? maximum : minimum + (index + 1) * width,
-    midpoint: minimum + (index + 0.5) * width,
-    count: 0,
-  }));
+export function marketBreadth(item: Pick<OverallTrendDatum, "up" | "down" | "covered">): number | null {
+  return item.covered ? roundOne(((item.up - item.down) / item.covered) * 100) : null;
+}
+
+export function buildFrequencyDistribution(values: number[]): FrequencyDatum[] {
+  const counts = new Map<number, number>();
   for (const value of values) {
-    const rawIndex = width === 0 ? 0 : Math.floor((value - minimum) / width);
-    const index = Math.min(Math.max(rawIndex, 0), binCount - 1);
-    bins[index]!.count += 1;
+    const tenth = Math.round(value * 10);
+    counts.set(tenth, (counts.get(tenth) ?? 0) + 1);
   }
-  return bins.filter((bin) => bin.count > 0);
+  return [...counts.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([tenth, count]) => ({ value: tenth / 10, count }));
 }
 
 export function datasetForSelection(

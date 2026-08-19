@@ -45,6 +45,24 @@ export function firstPeriodByYear(periods: string[]): Set<string> {
   return first;
 }
 
+export interface SymmetricScale {
+  minimum: number;
+  maximum: number;
+  interval: number;
+}
+
+export function symmetricScale(values: number[], minimumAbsolute: number): SymmetricScale {
+  const maximumAbsolute = Math.max(minimumAbsolute, ...values.map((value) => Math.abs(value)));
+  const paddedMaximum = maximumAbsolute * 1.05;
+  const roughInterval = paddedMaximum / 4;
+  const magnitude = 10 ** Math.floor(Math.log10(roughInterval));
+  const normalizedInterval = roughInterval / magnitude;
+  const niceFactor = [1, 2, 5, 10].find((factor) => factor >= normalizedInterval) ?? 10;
+  const interval = Number((niceFactor * magnitude).toPrecision(12));
+  const maximum = Number((Math.ceil(paddedMaximum / interval) * interval).toPrecision(12));
+  return { minimum: -maximum, maximum, interval };
+}
+
 export const axisLineStyle = { color: "#cbd5e1" };
 export const splitLineStyle = { color: COLORS.grid, width: 1 };
 export const axisLabelStyle = { color: COLORS.muted, fontSize: 11 };

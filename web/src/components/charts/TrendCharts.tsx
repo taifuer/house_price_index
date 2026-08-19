@@ -6,10 +6,10 @@ import { EChart } from "../EChart";
 import { Segmented } from "../Segmented";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { CITY_SERIES_COLORS, reconcileCityColors } from "../../lib/cityColors";
-import { buildOverallTrend, buildTierTrend } from "../../lib/data";
+import { buildOverallTrend, buildTierTrend, marketBreadth } from "../../lib/data";
 import { COLORS, axisLabelStyle, firstPeriodByYear, splitLineStyle } from "../../lib/chartTheme";
-import { completeMonths, formatPct, periodsForRange, roundOne, summarizePeriodRanges } from "../../lib/format";
-import type { CityTier, DatasetShard, Manifest, TrendRange } from "../../types";
+import { completeMonths, formatPct, metricAxisName, periodsForRange, roundOne, summarizePeriodRanges } from "../../lib/format";
+import type { CityTier, DatasetShard, Manifest, TrendMode, TrendRange } from "../../types";
 
 const rangeOptions: ReadonlyArray<{ value: TrendRange; label: string }> = [
   { value: "all", label: "全部" },
@@ -18,12 +18,13 @@ const rangeOptions: ReadonlyArray<{ value: TrendRange; label: string }> = [
   { value: "10y", label: "近10年" },
 ];
 
-const MOBILE_MAX_YEAR_LABELS = 6;
+const MOBILE_MAX_YEAR_LABELS = 5;
 
 interface TrendProps {
   manifest: Manifest;
   shard: DatasetShard;
   filePrefix: string;
+  metric: string;
 }
 
 function yearAxis(periods: string[], show = true, maximumLabels?: number) {
@@ -49,7 +50,7 @@ function yearAxis(periods: string[], show = true, maximumLabels?: number) {
       ...axisLabelStyle,
       show,
       interval: 0,
-      hideOverlap: true,
+      hideOverlap: false,
       formatter: (period: string) => (firstPeriods.has(period) ? `${period.slice(0, 4)}年` : ""),
     },
   };
@@ -59,10 +60,24 @@ function missingNote(periods: string[], label: string): string {
   return periods.length ? `* ${periods.length} 个月份${label}：${summarizePeriodRanges(periods)}` : "";
 }
 
-export function OverallTrendChart({ manifest, shard, filePrefix }: TrendProps) {
+interface OverallTrendChartProps extends TrendProps {
+  mode: TrendMode;
+  range: TrendRange;
+  onModeChange: (mode: TrendMode) => void;
+  onRangeChange: (range: TrendRange) => void;
+}
+
+export function OverallTrendChart({
+  manifest,
+  shard,
+  filePrefix,
+  metric,
+  mode,
+  range,
+  onModeChange,
+  onRangeChange,
+}: OverallTrendChartProps) {
   const isMobile = useMediaQuery("(max-width: 767px)");
-  const [mode, setMode] = useState<"overall" | "tier">("overall");
-  const [range, setRange] = useState<TrendRange>("10y");
   const overall = useMemo(() => buildOverallTrend(manifest, shard), [manifest, shard]);
   const tierTrend = useMemo(() => buildTierTrend(manifest, shard), [manifest, shard]);
   const allPeriods = overall.map((item) => item.period);
@@ -104,6 +119,56 @@ export function OverallTrendChart({ manifest, shard, filePrefix }: TrendProps) {
         { name: "持平", type: "bar", stack: "direction", barMaxWidth: 12, data: visible.map((item) => item.flat), itemStyle: { color: COLORS.flat } },
         { name: "下跌", type: "bar", stack: "direction", barMaxWidth: 12, data: visible.map((item) => -item.down), itemStyle: { color: COLORS.down } },
       ],
+    };
+  }, [isMobile, manifest.cities.length, overall, visiblePeriods, visibleSet]);
+
+  const breadthOption = useMemo<EChartsCoreOption>(() => {
+    const visible = overall.filter((item) => visibleSet.has(item.period));
+    return {
+      animationDuration: 350,
+      aria: { enabled: true, description: "上涨城市与下跌城市之差占覆盖城市比例的历史趋势" },
+      grid: { left: 58, right: 18, top: 24, bottom: isMobile ? 44 : 54 },
+      tooltip: {
+        trigger: "axis",
+        formatter: (raw: unknown) => {
+          const params = raw as Array<{ dataIndex: number; value: number | null }>;
+          const item = visible[params[0]?.dataIndex ?? -1];
+          if (!item) return "";
+          const value = marketBreadth(item);
+          return `${item.period}<br/>市场广度 ${value == null ? "无数据" : formatPct(value)}<br/>上涨 ${item.up}｜下跌 ${item.down}<br/>覆盖城市 ${item.covered}/${manifest.cities.length}`;
+        },
+      },
+      xAxis: yearAxis(visiblePeriods, true, isMobile ? MOBILE_MAX_YEAR_LABELS : undefined),
+      yAxis: {
+        type: "value",
+        min: -100,
+        max: 100,
+        interval: 50,
+        axisLabel: { ...axisLabelStyle, formatter: (value: number) => `${value}%` },
+        splitLine: { lineStyle: splitLineStyle },
+        name: "市场广度（%）",
+        nameLocation: "middle",
+        nameGap: 44,
+        nameTextStyle: axisLabelStyle,
+      },
+      series: [{
+        name: "市场广度",
+        type: "line",
+        connectNulls: false,
+        showSymbol: visiblePeriods.length <= 60,
+        symbol: "circle",
+        symbolSize: 5,
+        lineStyle: { width: 2, color: COLORS.selection },
+        itemStyle: { color: COLORS.selection },
+        data: visible.map(marketBreadth),
+        markLine: {
+          silent: true,
+          symbol: "none",
+          label: { show: false },
+          lineStyle: { color: COLORS.baseline },
+          data: [{ yAxis: 0 }],
+        },
+      }],
     };
   }, [isMobile, manifest.cities.length, overall, visiblePeriods, visibleSet]);
 
@@ -162,33 +227,41 @@ export function OverallTrendChart({ manifest, shard, filePrefix }: TrendProps) {
   }, [isMobile, manifest.cities, tierTrend, visiblePeriods, visibleSet]);
 
   const incomplete = mode === "overall"
-    ? overall.filter((item) => !item.complete).map((item) => item.period)
-    : [...new Set(tierTrend.filter((item) => !item.complete).map((item) => item.period))];
-  const note = missingNote(incomplete, mode === "overall" ? "数据不完整" : "分层数据不完整");
+    ? overall.filter((item) => visibleSet.has(item.period) && !item.complete).map((item) => item.period)
+    : mode === "tier"
+      ? [...new Set(tierTrend.filter((item) => visibleSet.has(item.period) && !item.complete).map((item) => item.period))]
+      : overall.filter((item) => visibleSet.has(item.period) && !item.complete).map((item) => item.period);
+  const note = missingNote(incomplete, mode === "tier" ? "分层数据不完整" : "数据不完整");
+  const displayedOption = mode === "overall" ? overallOption : mode === "tier" ? tierOption : breadthOption;
 
   return (
     <div className="chart-block overall-trend-chart">
-      <div className="overall-trend-toolbar">
-        <h3>整体趋势</h3>
-        <div className="trend-mode-row">
+      <h3 className="analysis-chart-title">整体趋势</h3>
+      <div className="paired-chart-controls">
+        <div className="paired-chart-control trend-mode-row">
           <Segmented
             value={mode}
-            options={[{ value: "overall", label: "总体" }, { value: "tier", label: "分层" }]}
-            onChange={setMode}
+            options={[
+              { value: "overall", label: "总体" },
+              { value: "tier", label: "分层" },
+              { value: "breadth", label: "广度" },
+            ]}
+            onChange={onModeChange}
             label="整体趋势视图"
           />
         </div>
-        <div className="trend-range-row">
-          <Segmented value={range} options={rangeOptions} onChange={setRange} label="整体趋势时间范围" />
+        <div className="paired-chart-control trend-range-row">
+          <Segmented value={range} options={rangeOptions} onChange={onRangeChange} label="整体趋势时间范围" />
         </div>
       </div>
       <EChart
-        option={mode === "overall" ? overallOption : tierOption}
-        height={mode === "overall" ? 430 : 640}
-        ariaLabel={mode === "overall" ? "总体涨跌城市数量趋势" : "分层涨跌城市占比趋势"}
-        fileName={`${filePrefix}-${mode === "overall" ? "整体趋势" : "分层趋势"}`}
+        option={displayedOption}
+        height={mode === "tier" ? 640 : 430}
+        ariaLabel={mode === "overall" ? "总体涨跌城市数量趋势" : mode === "tier" ? "分层涨跌城市占比趋势" : "市场广度趋势"}
+        fileName={`${filePrefix}-${mode === "overall" ? "整体趋势" : mode === "tier" ? "分层趋势" : "市场广度"}`}
       />
       {note && <p className="trend-note">{note}</p>}
+      {mode === "breadth" && <p className="trend-note">* 市场广度 =（上涨城市数 - 下跌城市数）/ 覆盖城市数，为派生指标。</p>}
     </div>
   );
 }
@@ -196,17 +269,21 @@ export function OverallTrendChart({ manifest, shard, filePrefix }: TrendProps) {
 interface CityTrendChartProps extends TrendProps {
   selectedCities: string[];
   onSelectedCitiesChange: (cities: string[]) => void;
+  range: TrendRange;
+  onRangeChange: (range: TrendRange) => void;
 }
 
 export function CityTrendChart({
   manifest,
   shard,
   filePrefix,
+  metric,
   selectedCities,
   onSelectedCitiesChange,
+  range,
+  onRangeChange,
 }: CityTrendChartProps) {
   const isMobile = useMediaQuery("(max-width: 767px)");
-  const [range, setRange] = useState<TrendRange>("10y");
   const periods = shard.periods.length ? completeMonths(shard.periods[0]!, shard.periods.at(-1)!) : [];
   const visiblePeriods = periodsForRange(periods, range);
   const rowsByPeriod = new Map(shard.periods.map((period, index) => [period, shard.values[index] ?? []]));
@@ -248,9 +325,11 @@ export function CityTrendChart({
     xAxis: yearAxis(visiblePeriods, true, isMobile ? MOBILE_MAX_YEAR_LABELS : undefined),
     yAxis: {
       type: "value",
-      axisLabel: { ...axisLabelStyle, formatter: (value: number) => value.toFixed(1) },
+      axisLabel: { ...axisLabelStyle, formatter: (value: number) => `${value.toFixed(1)}%` },
       splitLine: { lineStyle: splitLineStyle },
-      name: "较基期变动",
+      name: metricAxisName(metric),
+      nameLocation: "middle",
+      nameGap: 42,
       nameTextStyle: axisLabelStyle,
     },
     series: selectedCities.map((city, colorIndex) => {
@@ -259,14 +338,13 @@ export function CityTrendChart({
       return {
         name: city,
         type: "line",
-        connectNulls: true,
-        showSymbol: visiblePeriods.length <= 60,
-        symbol: "circle",
-        symbolSize: 5,
-        lineStyle: { width: 2, color },
+        connectNulls: false,
+        showSymbol: false,
+        symbol: "none",
+        lineStyle: { width: 2.2, type: "solid", color, opacity: 0.86 },
         itemStyle: { color },
-        emphasis: { focus: "series", lineStyle: { width: 3 } },
-        blur: { lineStyle: { opacity: 0.16 }, itemStyle: { opacity: 0.16 } },
+        emphasis: { focus: "series", lineStyle: { width: 3.5, opacity: 1 } },
+        blur: { lineStyle: { opacity: 0.16 } },
         data: visiblePeriods.map((period) => {
           if (cityIndex == null) return null;
           const value = rowsByPeriod.get(period)?.[cityIndex];
@@ -274,9 +352,9 @@ export function CityTrendChart({
         }),
       };
     }),
-  }), [cityColors, cityIndexes, isMobile, rowsByPeriod, selectedCities, visiblePeriods]);
+  }), [cityColors, cityIndexes, isMobile, metric, rowsByPeriod, selectedCities, visiblePeriods]);
 
-  const missingPeriods = periods.filter((period) => selectedCities.some((city) => {
+  const missingPeriods = visiblePeriods.filter((period) => selectedCities.some((city) => {
     const cityIndex = cityIndexes.get(city);
     return cityIndex == null || rowsByPeriod.get(period)?.[cityIndex] == null;
   }));
@@ -285,8 +363,8 @@ export function CityTrendChart({
   return (
     <div className="chart-block city-trend-chart">
       <div className="chart-heading-row trend-chart-heading">
-        <h3>城市趋势</h3>
-        <Segmented value={range} options={rangeOptions} onChange={setRange} label="城市趋势时间范围" />
+        <h3>走势对比</h3>
+        <Segmented value={range} options={rangeOptions} onChange={onRangeChange} label="走势对比时间范围" />
       </div>
       <CityPicker
         cities={manifest.cities}
@@ -295,7 +373,7 @@ export function CityTrendChart({
         maxSelected={CITY_SERIES_COLORS.length}
       />
       {selectedCities.length ? (
-        <EChart option={option} height={425} ariaLabel="选中城市价格趋势" fileName={`${filePrefix}-城市趋势`} />
+        <EChart option={option} height={425} ariaLabel="选中城市价格走势对比" fileName={`${filePrefix}-走势对比`} />
       ) : (
         <div className="empty-chart">请选择至少一个城市</div>
       )}

@@ -6,7 +6,15 @@ export function roundOne(value: number): number {
 
 export function formatPct(value: number): string {
   const rounded = roundOne(value);
-  return `${rounded >= 0 ? "+" : ""}${rounded.toFixed(1)}`;
+  return `${rounded > 0 ? "+" : ""}${rounded.toFixed(1)}%`;
+}
+
+export function formatMetric(metric: string): string {
+  return metric === "累计平均" ? "累计平均同比" : metric;
+}
+
+export function metricAxisName(metric: string): string {
+  return `${formatMetric(metric)}涨跌幅（%）`;
 }
 
 export function formatPeriod(period: string): string {

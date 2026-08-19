@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { DatasetShard, Manifest } from "../types";
-import { buildHistogram, buildOverallTrend, cityDataForPeriod } from "./data";
-import { completeMonths, formatPct, periodsForRange, summarizePeriodRanges } from "./format";
+import { buildFrequencyDistribution, buildOverallTrend, cityDataForPeriod, marketBreadth } from "./data";
+import { completeMonths, formatMetric, formatPct, metricAxisName, periodsForRange, summarizePeriodRanges } from "./format";
 
 const manifest = {
   cities: [
@@ -38,17 +38,26 @@ describe("data transforms", () => {
     ]);
   });
 
-  it("builds a stable histogram including the maximum", () => {
-    const histogram = buildHistogram([-1, -0.5, 0, 0.5, 1], 4);
-    expect(histogram.reduce((total, bin) => total + bin.count, 0)).toBe(5);
-    expect(histogram.at(-1)?.right).toBe(1);
+  it("derives market breadth from covered cities", () => {
+    expect(marketBreadth({ up: 40, down: 20, covered: 70 })).toBe(28.6);
+    expect(marketBreadth({ up: 0, down: 0, covered: 0 })).toBeNull();
+  });
+
+  it("counts each published tenth-point value without merging endpoints", () => {
+    expect(buildFrequencyDistribution([-0.3, -0.3, 0.3, 0.4])).toEqual([
+      { value: -0.3, count: 2 },
+      { value: 0.3, count: 1 },
+      { value: 0.4, count: 1 },
+    ]);
   });
 });
 
 describe("formatting", () => {
   it("formats percentages and month ranges", () => {
-    expect(formatPct(0)).toBe("+0.0");
-    expect(formatPct(-0.26)).toBe("-0.3");
+    expect(formatPct(0)).toBe("0.0%");
+    expect(formatPct(-0.26)).toBe("-0.3%");
+    expect(formatMetric("累计平均")).toBe("累计平均同比");
+    expect(metricAxisName("环比")).toBe("环比涨跌幅（%）");
     expect(completeMonths("2025-12", "2026-02")).toEqual(["2025-12", "2026-01", "2026-02"]);
     expect(summarizePeriodRanges(["2026-01", "2026-02", "2026-04"])).toBe(
       "2026年1月 至 2026年2月、2026年4月",

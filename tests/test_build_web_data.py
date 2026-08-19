@@ -36,6 +36,12 @@ class BuildWebDataTests(unittest.TestCase):
 
             self.assertEqual(manifest["recordCount"], 4)
             self.assertEqual(manifest["defaultDataset"], current_id)
+            descriptor = manifest["datasets"][0]
+            self.assertEqual(descriptor["periodCoverage"], [2, 2])
+            self.assertEqual(descriptor["coverage"]["completeMonths"], 0)
+            self.assertEqual(descriptor["coverage"]["partialMonths"], 2)
+            self.assertEqual(descriptor["coverage"]["unpublishedMonths"], 0)
+            self.assertIsNone(descriptor["coverage"]["lastCompletePeriod"])
             self.assertEqual(shard["periods"], ["2026-06", "2026-07"])
             self.assertEqual(shard["recordCount"], 4)
             self.assertEqual(len(shard["values"]), 2)
@@ -56,6 +62,8 @@ class BuildWebDataTests(unittest.TestCase):
         manifest = json.loads((data_dir / "manifest.json").read_text())
 
         self.assertEqual(manifest["recordCount"], len(source))
+        self.assertEqual(manifest["schemaVersion"], 2)
+        self.assertTrue(manifest["generatedAt"])
         self.assertEqual(manifest["periodRange"], [source["period"].min(), source["period"].max()])
         self.assertEqual(len(manifest["cities"]), 70)
         self.assertEqual(len(manifest["datasets"]), 24)
@@ -64,6 +72,7 @@ class BuildWebDataTests(unittest.TestCase):
         for descriptor in manifest["datasets"]:
             shard = json.loads((data_dir / descriptor["path"]).read_text())
             self.assertEqual(shard["periods"], descriptor["periods"])
+            self.assertEqual(len(descriptor["periodCoverage"]), len(descriptor["periods"]))
             self.assertEqual(len(shard["periods"]), len(shard["values"]))
             self.assertTrue(all(len(row) == 70 for row in shard["values"]))
             non_null = sum(value is not None for row in shard["values"] for value in row)

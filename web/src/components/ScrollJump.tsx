@@ -1,42 +1,51 @@
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowUp } from "lucide-react";
 
 export function ScrollJump() {
-  const [direction, setDirection] = useState<"up" | "down">("down");
+  const [visible, setVisible] = useState(false);
   const [bottom, setBottom] = useState(20);
 
   useEffect(() => {
+    let frame = 0;
     const update = () => {
-      const scrollable = document.documentElement.scrollHeight - window.innerHeight;
-      setDirection(scrollable > 0 && window.scrollY > scrollable * 0.42 ? "up" : "down");
+      frame = 0;
+      const scrollable = document.documentElement.scrollHeight > window.innerHeight * 2;
+      setVisible(scrollable && window.scrollY > window.innerHeight * 0.6);
       const footer = document.getElementById("app-footer");
       if (!footer) return;
       const footerTop = footer.getBoundingClientRect().top;
       setBottom(Math.max(20, footerTop < window.innerHeight ? window.innerHeight - footerTop + 16 : 20));
     };
-    update();
-    window.addEventListener("scroll", update, { passive: true });
-    window.addEventListener("resize", update);
+    const scheduleUpdate = () => {
+      if (!frame) frame = window.requestAnimationFrame(update);
+    };
+    const resizeObserver = new ResizeObserver(scheduleUpdate);
+    resizeObserver.observe(document.body);
+    const footer = document.getElementById("app-footer");
+    if (footer) resizeObserver.observe(footer);
+    scheduleUpdate();
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
     return () => {
-      window.removeEventListener("scroll", update);
-      window.removeEventListener("resize", update);
+      if (frame) window.cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
+      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
     };
   }, []);
-
-  const jump = () => {
-    window.scrollTo({ top: direction === "up" ? 0 : document.documentElement.scrollHeight, behavior: "smooth" });
-  };
 
   return (
     <button
       type="button"
-      className="scroll-jump"
+      className={`scroll-jump${visible ? " is-visible" : ""}`}
       style={{ bottom }}
-      onClick={jump}
-      title={direction === "up" ? "回到顶部" : "前往底部"}
-      aria-label={direction === "up" ? "回到顶部" : "前往底部"}
+      onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+      title="回到顶部"
+      aria-label="回到顶部"
+      aria-hidden={!visible}
+      tabIndex={visible ? 0 : -1}
     >
-      {direction === "up" ? <ArrowUp size={19} /> : <ArrowDown size={19} />}
+      <ArrowUp size={19} />
     </button>
   );
 }
