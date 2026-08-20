@@ -262,7 +262,7 @@ function MomentumQuadrantChart({ manifest, momShard, yoyShard, period, filePrefi
     animationDuration: 300,
     aria: { enabled: true, description: `${formatPeriod(period)}各城市环比与同比涨跌幅四象限图` },
     color: tiers.map((tier) => TIER_COLORS[tier]),
-    legend: { bottom: 3, left: "center", itemWidth: 12, itemHeight: 9, textStyle: axisLabelStyle },
+    legend: { data: tiers, bottom: 3, left: "center", itemWidth: 12, itemHeight: 9, textStyle: axisLabelStyle },
     grid: { left: 58, right: 22, top: 26, bottom: isMobile ? 94 : 78 },
     tooltip: {
       trigger: "item",
@@ -299,28 +299,13 @@ function MomentumQuadrantChart({ manifest, momShard, yoyShard, period, filePrefi
       nameGap: 46,
       nameTextStyle: axisLabelStyle,
     },
-    series: tiers.map((tier, index) => ({
-      name: tier,
-      type: "scatter",
-      symbol: TIER_SYMBOLS[tier],
-      symbolSize: (raw: unknown) => 8 + Math.sqrt(Number((raw as [number, number, string, number])[3])) * 4,
-      data: (groupedPoints.get(tier) ?? []).map((item) => [item.mom, item.yoy, item.cities.join("、"), item.cities.length]),
-      itemStyle: { color: TIER_COLORS[tier], opacity: 0.84 },
-      emphasis: {
-        focus: "series",
-        scale: 1.5,
-        label: {
-          show: true,
-          position: "top",
-          color: COLORS.text,
-          fontSize: 11,
-          formatter: (raw: unknown) => {
-            const values = (raw as { value: [number, number, string, number] }).value;
-            return values[3] === 1 ? values[2] : `${values[3]} 城`;
-          },
-        },
-      },
-      ...(index === 0 ? {
+    series: [
+      {
+        type: "line",
+        data: [],
+        silent: true,
+        symbol: "none",
+        tooltip: { show: false },
         markLine: {
           silent: true,
           symbol: "none",
@@ -345,15 +330,49 @@ function MomentumQuadrantChart({ manifest, momShard, yoyShard, period, filePrefi
             [{ name: "同比下跌\n环比转强", xAxis: 0, yAxis: yMinimum, itemStyle: { color: "rgba(229, 72, 77, 0.03)" } }, { xAxis: xMaximum, yAxis: 0 }],
           ],
         },
-      } : {}),
-    })),
+      },
+      ...tiers.map((tier) => ({
+        name: tier,
+        type: "scatter",
+        legendHoverLink: false,
+        symbol: TIER_SYMBOLS[tier],
+        symbolSize: (raw: unknown) => Math.min(28, 12 * Math.sqrt(Number((raw as [number, number, string, number])[3]))),
+        data: (groupedPoints.get(tier) ?? []).map((item) => [item.mom, item.yoy, item.cities.join("、"), item.cities.length]),
+        itemStyle: { color: TIER_COLORS[tier], opacity: 0.84 },
+        label: {
+          show: true,
+          position: "inside",
+          color: "#ffffff",
+          fontSize: 9,
+          fontWeight: 700,
+          formatter: (raw: unknown) => {
+            const values = (raw as { value: [number, number, string, number] }).value;
+            return values[3] > 1 ? String(values[3]) : "";
+          },
+        },
+        emphasis: {
+          focus: isMobile ? "none" : "series",
+          scale: isMobile ? 1.15 : 1.5,
+          label: {
+            show: !isMobile,
+            position: "top",
+            color: COLORS.text,
+            fontSize: 11,
+            formatter: (raw: unknown) => {
+              const values = (raw as { value: [number, number, string, number] }).value;
+              return values[3] === 1 ? values[2] : `${values[3]} 城`;
+            },
+          },
+        },
+      })),
+    ],
   }), [groupedPoints, isMobile, period, points, tiers, xInterval, xMaximum, xMinimum, yInterval, yMaximum, yMinimum]);
 
   return (
     <div className="chart-block quadrant-chart">
       <h3 className="analysis-chart-title">城市环比与同比</h3>
       <EChart option={option} height={isMobile ? 540 : 500} ariaLabel="当前月份各城市环比与同比分布" fileName={`${filePrefix}-城市环比与同比`} />
-      <p className="analysis-caption">共同覆盖 {points.length}/{manifest.cities.length} 城；气泡大小表示同层级同坐标城市数，仅比较同月同时具备环比和同比数据的城市。</p>
+      <p className="analysis-caption">共同覆盖 {points.length}/{manifest.cities.length} 城；标记大小表示同层级中环比与同比数值均相同的重合城市数。</p>
     </div>
   );
 }

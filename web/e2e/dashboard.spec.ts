@@ -108,6 +108,14 @@ test("renders the complete default dashboard without horizontal overflow", async
   await expect(page.locator(".footer-copyright")).toHaveText(`© ${new Date().getFullYear()} House Price Index`);
   await expect(page.locator(".footer-copyright")).toHaveCSS("white-space", "nowrap");
   await expect(page.locator(".app-footer")).toHaveCSS("font-size", "13px");
+  const footerCenterOffset = await page.locator(".app-footer").evaluate((footer) => {
+    const footerRect = footer.getBoundingClientRect();
+    const contentRects = [...footer.children].map((element) => element.getBoundingClientRect());
+    const contentLeft = Math.min(...contentRects.map((rect) => rect.left));
+    const contentRight = Math.max(...contentRects.map((rect) => rect.right));
+    return (contentLeft + contentRight) / 2 - (footerRect.left + footerRect.right) / 2;
+  });
+  expect(Math.abs(footerCenterOffset)).toBeLessThanOrEqual(1);
   const tierComparison = page.locator(".tier-comparison-chart");
   const distribution = page.locator(".compact-chart").filter({ has: page.getByRole("heading", { name: "城市涨跌分布" }) });
   await expect.poll(() => distribution.locator(".chart-canvas svg text").filter({ hasText: /^15$/ }).count()).toBeGreaterThanOrEqual(2);
@@ -437,7 +445,22 @@ test("groups monthly views with overview and trend sections", async ({ page }, t
   await screenshotStyle.evaluate((element) => element.remove());
 
   await expect(comparison.locator(".analysis-caption")).toContainText("共同覆盖 70/70 城");
+  await expect(comparison.locator(".analysis-caption")).toContainText("重合城市数");
   await expect(comparison.locator(".chart-canvas svg text").filter({ hasText: /^(双升|双降)$/ })).toHaveCount(2);
+  await expect(comparison.locator(".chart-canvas svg text").filter({ hasText: /^2$/ })).toHaveCount(2);
+  const firstTierLegend = comparison.locator(".chart-canvas svg text").filter({ hasText: /^一线$/ });
+  await firstTierLegend.click();
+  await page.waitForTimeout(350);
+  await expect(comparison.locator(".chart-canvas svg text").filter({ hasText: /^(双升|双降)$/ })).toHaveCount(2);
+  const markerOpacities = await comparison.locator(".chart-canvas svg").evaluate((svg) => {
+    const visibleTierColors = new Set(["#0f766e", "#b45309"]);
+    return [...svg.querySelectorAll("[fill]")]
+      .filter((element) => visibleTierColors.has(element.getAttribute("fill") ?? ""))
+      .map((element) => Number(getComputedStyle(element).opacity));
+  });
+  expect(markerOpacities.length).toBeGreaterThan(0);
+  expect(Math.min(...markerOpacities)).toBeGreaterThanOrEqual(0.8);
+  await firstTierLegend.click();
   await page.waitForTimeout(350);
   await comparison.screenshot({ path: `/tmp/house-v4-quadrant-${testInfo.project.name}.png` });
 
