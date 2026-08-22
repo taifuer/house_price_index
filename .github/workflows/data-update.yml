@@ -28,12 +28,12 @@ jobs:
       DATA_PATH: data/house_price_index_all.csv.gz
       TZ: Asia/Shanghai
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: dev
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
@@ -123,7 +123,7 @@ jobs:
           python -m py_compile scripts/fetch_stats.py scripts/build_web_data.py scripts/check_monthly_update.py housing_constants.py dashboard_runtime.py dashboard_trends.py app.py
           python -m unittest discover -s tests -v
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: steps.after.outputs.complete == 'true'
         with:
           node-version: "22"
