@@ -19,7 +19,7 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: pip install -r requirements.txt
-      - run: python -m py_compile scripts/fetch_stats.py scripts/build_web_data.py housing_constants.py dashboard_runtime.py dashboard_trends.py app.py
+      - run: python -m py_compile scripts/fetch_stats.py scripts/build_web_data.py scripts/check_monthly_update.py housing_constants.py dashboard_runtime.py dashboard_trends.py app.py
       - run: python -m unittest discover -s tests -v
       - uses: actions/setup-node@v4
         with:

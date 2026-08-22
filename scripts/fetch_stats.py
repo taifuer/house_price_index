@@ -12,6 +12,7 @@ import json
 import re
 import sys
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from html.parser import HTMLParser
@@ -674,13 +675,16 @@ def csv_text_reader(path: Path):
     return path.open("r", newline="", encoding="utf-8-sig")
 
 
+@contextmanager
 def csv_text_writer(path: Path):
     if path.suffix == ".gz":
-        raw_file = path.open("wb")
-        gzip_file = gzip.GzipFile(fileobj=raw_file, mode="wb", mtime=0)
-        text_file = io.TextIOWrapper(gzip_file, encoding="utf-8-sig", newline="")
-        return text_file
-    return path.open("w", newline="", encoding="utf-8-sig")
+        with path.open("wb") as raw_file:
+            with gzip.GzipFile(fileobj=raw_file, mode="wb", mtime=0) as gzip_file:
+                with io.TextIOWrapper(gzip_file, encoding="utf-8-sig", newline="") as text_file:
+                    yield text_file
+        return
+    with path.open("w", newline="", encoding="utf-8-sig") as text_file:
+        yield text_file
 
 
 def read_csv(path: Path) -> list[dict]:
@@ -874,18 +878,31 @@ def run_incremental(args: argparse.Namespace) -> tuple[list[dict], list[str], Pa
 
     existing_periods = {str(record["period"]) for record in existing_records if record.get("period")}
     max_existing_period = max(existing_periods)
-    target_periods = sorted((period for period in candidates if period > max_existing_period), reverse=True)
+    requested_period = getattr(args, "target_period", None)
+    if requested_period:
+        if not re.fullmatch(r"\d{4}-(?:0[1-9]|1[0-2])", requested_period):
+            raise ValueError(f"指定月份格式无效：{requested_period}，应为 YYYY-MM")
+        target_periods = [requested_period] if requested_period in candidates else []
+    else:
+        target_periods = sorted((period for period in candidates if period > max_existing_period), reverse=True)
     target_candidates = {period: candidates[period] for period in target_periods}
 
     candidate_periods = set(candidates)
-    expected_periods = iter_months(max_existing_period, previous_month(date.today()))
+    expected_periods = (
+        [requested_period]
+        if requested_period
+        else iter_months(max_existing_period, previous_month(date.today()))
+    )
     missing_periods = [period for period in expected_periods if period not in candidate_periods]
 
     if target_candidates:
         print(f"增量发现 {len(target_candidates)} 个新月份：{', '.join(sorted(target_candidates))}")
         new_records, warnings = fetch_history_candidates(target_candidates, args)
     else:
-        print(f"未发现 {max_existing_period} 之后的新月份")
+        if requested_period:
+            print(f"搜索结果中未发现指定月份 {requested_period}")
+        else:
+            print(f"未发现 {max_existing_period} 之后的新月份")
         new_records, warnings = [], []
 
     output_path = Path(args.out) if args.out else existing_path
@@ -910,6 +927,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--all-history", action="store_true", help="通过国家统计局搜索 API 发现并抓取全部历史月份")
     parser.add_argument("--incremental", action="store_true", help="基于现有 CSV 只抓取最新新增月份")
     parser.add_argument("--existing", help="增量模式读取的现有 CSV 或 CSV.GZ 路径，默认自动查找")
+    parser.add_argument("--target-period", help="增量模式只检查并抓取指定月份（YYYY-MM）")
     parser.add_argument(
         "--missing-log",
         default=str(DEFAULT_MISSING_LOG_PATH),
@@ -930,6 +948,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.incremental and (args.all_history or args.url or args.search_url):
         raise RuntimeError("--incremental 不能与 --all-history、--url 或 --search-url 同时使用")
+    if args.target_period and not args.incremental:
+        raise RuntimeError("--target-period 只能与 --incremental 一起使用")
 
     if args.incremental:
         all_records, all_warnings, output_path = run_incremental(args)

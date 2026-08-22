@@ -1,0 +1,218 @@
+name: Monthly data update
+
+on:
+  schedule:
+    - cron: "37 17 8-21 * *"
+      timezone: "Asia/Shanghai"
+  workflow_dispatch:
+    inputs:
+      target_period:
+        description: "Optional target month (YYYY-MM); defaults to the previous month"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: monthly-housing-data-update
+  cancel-in-progress: false
+
+jobs:
+  check-and-update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DATA_PATH: data/house_price_index_all.csv.gz
+      TZ: Asia/Shanghai
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Check committed target month
+        id: before
+        env:
+          REQUESTED_PERIOD: ${{ github.event.inputs.target_period || '' }}
+        run: |
+          args=(--data "$DATA_PATH" --github-output "$GITHUB_OUTPUT")
+          if [[ -n "$REQUESTED_PERIOD" ]]; then
+            args+=(--period "$REQUESTED_PERIOD")
+          fi
+          python scripts/check_monthly_update.py "${args[@]}"
+
+      - name: Stop when target month is already committed
+        if: steps.before.outputs.complete == 'true'
+        run: echo "::notice::${{ steps.before.outputs.period_label }}数据已完整入库，本次无需检测统计局。"
+
+      - name: Check for an existing update pull request
+        id: existing-pr
+        if: steps.before.outputs.complete != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_TITLE: 更新${{ steps.before.outputs.period_label }}房价数据
+        run: |
+          pr_url="$(
+            gh pr list --base dev --state open --limit 100 --json title,url \
+              --jq "map(select(.title == \"$PR_TITLE\"))[0].url // \"\""
+          )"
+          if [[ -n "$pr_url" ]]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "url=$pr_url" >> "$GITHUB_OUTPUT"
+            echo "::notice::目标月份已有更新 PR：$pr_url"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install scraper dependency
+        if: steps.before.outputs.complete != 'true' && steps.existing-pr.outputs.exists != 'true'
+        run: python -m pip install "$(sed -n '/^requests==/p' requirements.txt)"
+
+      - name: Fetch target month
+        if: steps.before.outputs.complete != 'true' && steps.existing-pr.outputs.exists != 'true'
+        run: |
+          python scripts/fetch_stats.py \
+            --incremental \
+            --target-period "${{ steps.before.outputs.target_period }}" \
+            --max-search-pages 3 \
+            --existing "$DATA_PATH" \
+            --out "$DATA_PATH"
+
+      - name: Validate fetched target month
+        id: after
+        if: steps.before.outputs.complete != 'true' && steps.existing-pr.outputs.exists != 'true'
+        run: |
+          python scripts/check_monthly_update.py \
+            --data "$DATA_PATH" \
+            --period "${{ steps.before.outputs.target_period }}" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Report unpublished or incomplete data
+        if: steps.after.outputs.complete == 'false'
+        run: |
+          echo "::notice::${{ steps.after.outputs.period_label }}尚未发布完整数据；后续计划任务将继续检查。"
+          echo "校验结果：${{ steps.after.outputs.problems_json }}"
+
+      - name: Install project dependencies
+        if: steps.after.outputs.complete == 'true'
+        run: pip install -r requirements.txt
+
+      - name: Rebuild browser data
+        if: steps.after.outputs.complete == 'true'
+        run: python scripts/build_web_data.py
+
+      - name: Verify source data changed
+        if: steps.after.outputs.complete == 'true'
+        run: |
+          if git diff --quiet -- "$DATA_PATH"; then
+            echo "::error::目标月份通过校验，但源数据文件没有变化。"
+            exit 1
+          fi
+
+      - name: Run Python validation
+        if: steps.after.outputs.complete == 'true'
+        run: |
+          python -m py_compile scripts/fetch_stats.py scripts/build_web_data.py scripts/check_monthly_update.py housing_constants.py dashboard_runtime.py dashboard_trends.py app.py
+          python -m unittest discover -s tests -v
+
+      - uses: actions/setup-node@v4
+        if: steps.after.outputs.complete == 'true'
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        if: steps.after.outputs.complete == 'true'
+        run: npm ci
+        working-directory: web
+
+      - name: Test and build frontend
+        if: steps.after.outputs.complete == 'true'
+        run: |
+          npm test
+          npm run build
+        working-directory: web
+
+      - name: Run browser regression tests
+        if: steps.after.outputs.complete == 'true'
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright test
+        working-directory: web
+
+      - name: Commit data update
+        id: commit
+        if: steps.after.outputs.complete == 'true'
+        env:
+          TARGET_PERIOD: ${{ steps.after.outputs.target_period }}
+          PERIOD_LABEL: ${{ steps.after.outputs.period_label }}
+        run: |
+          branch="automation/data-${TARGET_PERIOD}-${GITHUB_RUN_ID}"
+          git config user.name "taifu"
+          git config user.email "taifu@taifua.com"
+          git switch -c "$branch"
+          git add "$DATA_PATH" web/public/data
+          git commit \
+            -m "更新${PERIOD_LABEL}房价数据" \
+            -m "抓取并校验国家统计局 70 城月度数据，重新生成前端静态数据分片。" \
+            -m "Co-Authored-By: Codex (GPT-5.6 Sol) <noreply@openai.com>"
+          git push --set-upstream origin "$branch"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Create data update pull request
+        if: steps.after.outputs.complete == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.commit.outputs.branch }}
+          PERIOD_LABEL: ${{ steps.after.outputs.period_label }}
+          RECORD_COUNT: ${{ steps.after.outputs.record_count }}
+        run: |
+          body="$(printf '%s\n\n%s\n%s\n\n%s\n%s\n%s\n%s' \
+            '## 变更' \
+            "- 更新国家统计局 ${PERIOD_LABEL}70 城商品住宅价格指数" \
+            '- 重新生成浏览器端数据清单与分片' \
+            '## 验证' \
+            "- 月度完整性校验：${RECORD_COUNT} 条" \
+            '- Python 单元测试' \
+            '- 前端单元测试、生产构建与 Playwright 回归测试')"
+          gh pr create \
+            --base dev \
+            --head "$BRANCH" \
+            --title "更新${PERIOD_LABEL}房价数据" \
+            --body "$body"
+
+      - name: Open final-check issue
+        if: >-
+          github.event_name == 'schedule' &&
+          steps.before.outputs.final_check == 'true' &&
+          steps.existing-pr.outputs.exists != 'true' &&
+          steps.after.outputs.complete == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PERIOD_LABEL: ${{ steps.after.outputs.period_label }}
+          PROBLEMS: ${{ steps.after.outputs.problems_json }}
+        run: |
+          issue_title="${PERIOD_LABEL}房价数据尚未完整入库"
+          issue_url="$(
+            gh issue list --state open --limit 100 --json title,url \
+              --jq "map(select(.title == \"$issue_title\"))[0].url // \"\""
+          )"
+          if [[ -n "$issue_url" ]]; then
+            echo "::notice::最终检测告警已存在：$issue_url"
+            exit 0
+          fi
+          body="$(printf '%s\n\n%s\n\n%s\n%s' \
+            "每月第二、三周的自动检测结束，仍未取得可发布的 ${PERIOD_LABEL}完整数据。" \
+            "校验结果：${PROBLEMS}" \
+            '请确认国家统计局发布状态或解析规则后，手动运行 Monthly data update。' \
+            "运行记录：https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}")"
+          gh issue create --title "$issue_title" --body "$body"
