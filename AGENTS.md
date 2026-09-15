@@ -99,7 +99,7 @@ git commit --author="taifu <taifu@taifua.com>"
 Agent-assisted commit messages must include this trailer in the message body:
 
 ```text
-Co-Authored-By: Codex (GPT-5.6 Sol) <noreply@openai.com>
+Co-Authored-By: Codex (GPT‑6 Astra) <noreply@openai.com>
 ```
 
 Pull requests should include:

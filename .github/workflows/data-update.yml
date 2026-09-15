@@ -164,7 +164,7 @@ jobs:
           git commit \
             -m "更新${PERIOD_LABEL}房价数据" \
             -m "抓取并校验国家统计局 70 城月度数据，重新生成前端静态数据分片。" \
-            -m "Co-Authored-By: Codex (GPT-5.6 Sol) <noreply@openai.com>"
+            -m "Co-Authored-By: Codex (GPT‑6 Astra) <noreply@openai.com>"
           git push --set-upstream origin "$branch"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
 

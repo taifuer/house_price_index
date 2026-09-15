@@ -110,6 +110,7 @@ DETAIL_URL_RE = re.compile(
 )
 HOUSING_TITLE_RE = re.compile(r"^(\d{4})年\s*(\d{1,2})月份70个大中城市(?:商品)?住宅销售价格变动情况$")
 SEARCH_API_URL = "https://api.so-gov.cn/query/s"
+RELEASE_LIST_URL = "https://www.stats.gov.cn/sj/zxfb/"
 DEFAULT_OUTPUT_PATH = "data/house_price_index.csv"
 DEFAULT_INCREMENTAL_PATHS = [
     Path("data/house_price_index_all.csv.gz"),
@@ -156,6 +157,7 @@ class NbsHTMLParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.texts: list[str] = []
         self.links: list[str] = []
+        self.titled_links: list[tuple[str, str]] = []
         self.images: list[str] = []
         self._skip_stack: list[str] = []
 
@@ -165,6 +167,7 @@ class NbsHTMLParser(HTMLParser):
             self._skip_stack.append(tag)
         if tag == "a" and attrs_dict.get("href"):
             self.links.append(attrs_dict["href"] or "")
+            self.titled_links.append((attrs_dict["href"] or "", attrs_dict.get("title") or ""))
         if tag == "img" and attrs_dict.get("src"):
             self.images.append(attrs_dict["src"] or "")
 
@@ -539,6 +542,40 @@ def canonical_url_score(url: str) -> int:
     return 2
 
 
+def discover_candidates_from_release_list(
+    target_period: str,
+    *,
+    max_pages: int = 3,
+    sleep_seconds: float = 0.5,
+) -> dict[str, list[SearchCandidate]]:
+    candidates: dict[str, list[SearchCandidate]] = {}
+    seen: set[str] = set()
+    for page in range(max_pages):
+        page_url = RELEASE_LIST_URL if page == 0 else urljoin(RELEASE_LIST_URL, f"index_{page}.html")
+        parser = parse_html(fetch_text(page_url))
+        release_count = 0
+        for href, title in parser.titled_links:
+            url = urljoin(page_url, href)
+            if not re.fullmatch(r"https://www\.stats\.gov\.cn/sj/zxfb/\d{6}/t\d+_\d+\.html", url):
+                continue
+            release_count += 1
+            period = title_to_period(title)
+            if not period or url in seen:
+                continue
+            seen.add(url)
+            candidates.setdefault(period, []).append(
+                SearchCandidate(period=period, title=clean_text(title), url=url)
+            )
+        if not release_count:
+            raise RuntimeError(f"官方发布列表未解析到有效详情链接：{page_url}")
+        print(f"官方发布列表第 {page + 1} 页，累计发现 {len(candidates)} 个房价月份", flush=True)
+        if target_period in candidates:
+            break
+        if page + 1 < max_pages and sleep_seconds:
+            time.sleep(sleep_seconds)
+    return candidates
+
+
 def discover_urls_from_search_api(
     query: str = "大中城市商品住宅销售价格变动情况",
     *,
@@ -869,8 +906,24 @@ def write_missing_log(
 
 
 def run_incremental(args: argparse.Namespace) -> tuple[list[dict], list[str], Path]:
+    requested_period = getattr(args, "target_period", None)
+    if requested_period and not re.fullmatch(r"\d{4}-(?:0[1-9]|1[0-2])", requested_period):
+        raise ValueError(f"指定月份格式无效：{requested_period}，应为 YYYY-MM")
     queries = list(dict.fromkeys([args.search_query, "大中城市住宅销售价格变动情况"]))
-    candidates = discover_candidates_from_search_api(queries, max_pages=args.max_search_pages)
+    discovery_warnings: list[str] = []
+    try:
+        candidates = discover_candidates_from_search_api(queries, max_pages=args.max_search_pages)
+    except (requests.RequestException, RuntimeError) as error:
+        if not requested_period:
+            raise
+        warning = f"搜索 API 不可用，改查官方发布列表：{error}"
+        discovery_warnings.append(warning)
+        print(f"警告：{warning}", flush=True)
+        candidates = {}
+    if requested_period and requested_period not in candidates:
+        releases = discover_candidates_from_release_list(requested_period)
+        for period, items in releases.items():
+            candidates.setdefault(period, []).extend(items)
     existing_path = resolve_existing_path(args)
     existing_records = read_csv(existing_path)
     if not existing_records:
@@ -878,10 +931,7 @@ def run_incremental(args: argparse.Namespace) -> tuple[list[dict], list[str], Pa
 
     existing_periods = {str(record["period"]) for record in existing_records if record.get("period")}
     max_existing_period = max(existing_periods)
-    requested_period = getattr(args, "target_period", None)
     if requested_period:
-        if not re.fullmatch(r"\d{4}-(?:0[1-9]|1[0-2])", requested_period):
-            raise ValueError(f"指定月份格式无效：{requested_period}，应为 YYYY-MM")
         target_periods = [requested_period] if requested_period in candidates else []
     else:
         target_periods = sorted((period for period in candidates if period > max_existing_period), reverse=True)
@@ -916,8 +966,8 @@ def run_incremental(args: argparse.Namespace) -> tuple[list[dict], list[str], Pa
         fetched_periods=sorted(target_candidates),
     )
     if missing_periods:
-        print(f"记录统计局尚未发布月份：{', '.join(missing_periods)}")
-    return merged_records, warnings, output_path
+        print(f"记录本次未发现的月份：{', '.join(missing_periods)}")
+    return merged_records, discovery_warnings + warnings, output_path
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:

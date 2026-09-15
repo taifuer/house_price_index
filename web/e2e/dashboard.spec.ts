@@ -95,7 +95,24 @@ test.beforeEach(async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test("renders the complete default dashboard without horizontal overflow", async ({ page }, testInfo) => {
+test("defaults to the latest published month", async ({ page }) => {
+  const response = await page.request.get("/data/manifest.json");
+  expect(response.ok()).toBe(true);
+  const manifest = await response.json();
+  const [year, month] = manifest.periodRange[1].split("-");
+  await expect(page.locator(".section-title-meta").first()).toHaveText(
+    `二手住宅 · 环比 · ${year}年${Number(month)}月`,
+  );
+  await expect(page.locator(".summary-item").first()).toContainText("70/70");
+  await expect(page.locator(".chart-canvas svg")).toHaveCount(8);
+  const heatmap = page.locator(".heatmap-chart");
+  await expect(heatmap.locator("svg text").filter({ hasText: `${year.slice(-2)}年${Number(month)}月` })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
+  expect(await findExtremeLabelOverlaps(extremeChart(page))).toEqual([]);
+});
+
+test("renders the July 2026 dashboard without horizontal overflow", async ({ page }, testInfo) => {
+  await page.goto("/?view=resale-all-mom&period=2026-07");
   await expect(page.locator(".app-title")).toHaveText("全国 70 城商品住宅价格指数");
   await expect(page.locator(".summary-item").nth(0)).toContainText("70/70");
   await expect(page.locator(".summary-item").last()).toContainText(/\[-?\d+\.\d%, \+?\d+\.\d%\]/);
@@ -220,6 +237,7 @@ test("keeps extreme labels separated on narrow mobile charts", async ({ page }, 
   test.skip(testInfo.project.name !== "mobile", "mobile-only label spacing assertion");
   await page.setViewportSize({ width: 320, height: 844 });
   const cases = [
+    "",
     "?view=resale-all-mom&period=2026-07",
     "?view=resale-90-144-mom&period=2016-05",
     "?view=resale-90-144-average&period=2018-05",
@@ -368,6 +386,7 @@ test("chart download and fullscreen controls work", async ({ page }, testInfo) =
 });
 
 test("persists trend controls and scopes missing-data notes to the visible range", async ({ page }) => {
+  await page.goto("/?view=resale-all-mom&period=2026-07");
   const overallTrend = page.locator(".overall-trend-chart");
   const cityTrend = page.locator(".city-trend-chart");
   await expect(overallTrend.locator(".trend-note")).toContainText("18 个月份");
@@ -392,6 +411,7 @@ test("persists trend controls and scopes missing-data notes to the visible range
 });
 
 test("groups monthly views with overview and trend sections", async ({ page }, testInfo) => {
+  await page.goto("/?view=resale-all-mom&period=2026-07");
   const errors: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
