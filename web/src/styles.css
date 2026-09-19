@@ -638,12 +638,15 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
-.data-column-period,
-.data-column-tier { width: 20%; }
 .data-column-city,
-.data-column-source { width: 16%; }
 .data-column-value,
-.data-column-change { width: 24%; }
+.data-column-change,
+.data-column-tier { width: 25%; }
+.is-history .data-column-period { width: 20%; }
+.is-history .data-column-city,
+.is-history .data-column-source { width: 16%; }
+.is-history .data-column-value,
+.is-history .data-column-change { width: 24%; }
 
 .data-table-scroll th,
 .data-table-scroll td {
@@ -726,7 +729,6 @@ a {
 .data-city-link {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
   min-height: 34px;
   padding: 0;
   border: 0;
@@ -1371,14 +1373,13 @@ a {
     max-height: min(440px, calc(100svh - 200px));
   }
 
-  .data-column-city { width: 28%; }
-  .data-column-value,
-  .data-column-change { width: 21%; }
-  .data-column-tier { width: 17%; }
-  .data-column-source { width: 13%; }
+  .data-column-city { width: 32%; }
+  .data-column-tier { width: 18%; }
   .is-history .data-column-period { width: 26%; }
   .is-history .data-column-city { width: 22%; }
   .is-history .data-column-value { width: 18%; }
+  .is-history .data-column-change { width: 21%; }
+  .is-history .data-column-source { width: 13%; }
 
   .data-table-scroll th,
   .data-table-scroll td {
@@ -1388,10 +1389,6 @@ a {
 
   .data-table-scroll thead button {
     gap: 2px;
-  }
-
-  .data-city-link {
-    gap: 3px;
   }
 
   .data-number {

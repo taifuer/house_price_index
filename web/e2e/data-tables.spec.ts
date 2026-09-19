@@ -36,9 +36,13 @@ test("monthly data shows all cities without search, pagination or download and s
   }
   await ranking.getByRole("button", { name: "数据表", exact: true }).click();
   const table = ranking.getByRole("table", { name: "当月城市数据", exact: true });
-  await expect(table.getByRole("columnheader")).toHaveText(["城市", "环比", "涨跌幅", "层级", "来源"]);
+  await expect(table.getByRole("columnheader")).toHaveText(["城市", "环比", "涨跌幅", "层级"]);
+  await expect(table.locator("col")).toHaveCount(4);
+  await expect(table.getByRole("link")).toHaveCount(0);
   await expect(table.getByRole("button", { name: "环比", exact: true })).toHaveAttribute("title", "环比指数，上月 = 100");
   await expect(table.locator("tbody tr")).toHaveCount(70);
+  await expect(table.locator(".data-city-link")).toHaveCount(70);
+  await expect(table.locator(".data-city-link svg")).toHaveCount(0);
   await expect(ranking.getByRole("searchbox")).toHaveCount(0);
   await expect(ranking.getByRole("combobox")).toHaveCount(0);
   await expect(ranking.getByRole("button", { name: /下载/ })).toHaveCount(0);
@@ -67,7 +71,9 @@ test("monthly data shows all cities without search, pagination or download and s
   const cityIndex = manifest.cities.findIndex((city) => city.name === "北京");
   const value = shard.values[shard.periods.indexOf("2026-08")]![cityIndex]!;
   await expect(beijing.locator("td.numeric").first()).toHaveText(value.toFixed(1));
-  await expect(beijing.locator("a")).toHaveAttribute("href", shard.sources[shard.periods.indexOf("2026-08")]!.url);
+  const overviewSource = page.getByRole("link", { name: "查看国家统计局原文", exact: true });
+  await expect(overviewSource).toBeVisible();
+  await expect(overviewSource).toHaveAttribute("href", shard.sources[shard.periods.indexOf("2026-08")]!.url);
   await ranking.getByRole("button", { name: "全部", exact: true }).click();
   await ranking.evaluate((element) => window.scrollTo({ top: element.getBoundingClientRect().top + scrollY - 70, behavior: "instant" }));
   await page.screenshot({ path: `/tmp/house-data-ranking-${testInfo.project.name}.png` });
@@ -101,7 +107,19 @@ test("city link opens collapsed trends, selects one city and exposes its history
   await trendSection.locator(".section-toggle").click();
   const ranking = page.locator(".ranking-chart");
   await ranking.getByRole("button", { name: "数据表", exact: true }).click();
-  await ranking.getByRole("button", { name: "查看北京走势" }).click();
+  const cityLink = ranking.getByRole("button", { name: "查看北京走势", exact: true });
+  await expect(cityLink).toHaveText("北京");
+  await expect(cityLink).toHaveAttribute("title", "查看北京走势");
+  if (testInfo.project.name === "desktop") {
+    await cityLink.focus();
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Shift+Tab");
+    await expect(cityLink).toBeFocused();
+    await expect(cityLink).toHaveCSS("text-decoration-line", "underline");
+    await cityLink.press("Enter");
+  } else {
+    await cityLink.tap();
+  }
   await expect(trendSection.locator(".section-toggle")).toHaveAttribute("aria-expanded", "true");
   await expect(page.locator(".city-trend-anchor")).toBeFocused();
   const city = page.locator(".city-trend-chart");
@@ -111,9 +129,18 @@ test("city link opens collapsed trends, selects one city and exposes its history
   await city.getByRole("button", { name: "数据表", exact: true }).click();
   await expect(city.getByRole("status")).toHaveText("共 60 条");
   const table = city.getByRole("table", { name: "城市历史数据", exact: true });
+  await expect(table.getByRole("columnheader")).toHaveText(["月份", "城市", "环比", "涨跌幅", "来源"]);
+  await expect(table.locator("col")).toHaveCount(5);
   await expect(table.locator("tbody tr")).toHaveCount(60);
   await expect(table.locator("tbody th").first()).toHaveText("2026-08");
   await expect(table.locator("tbody tr").first().locator("td").first()).toHaveText("北京");
+  const manifest = await (await page.request.get("/data/manifest.json")).json() as Manifest;
+  const descriptor = manifest.datasets.find((dataset) => dataset.id === "resale-all-mom")!;
+  const shard = await (await page.request.get(`/data/${descriptor.path}`)).json() as DatasetShard;
+  for (const period of ["2026-08", "2026-07"]) {
+    const source = table.getByRole("link", { name: `查看${period}统计局原文`, exact: true });
+    await expect(source).toHaveAttribute("href", shard.sources[shard.periods.indexOf(period)]!.url);
+  }
   await city.getByRole("button", { name: "近3年", exact: true }).click();
   await expect(city.getByRole("status")).toHaveText("共 36 条");
   await expect(table.locator("tbody tr")).toHaveCount(36);
@@ -235,8 +262,12 @@ test("full-width tables balance every column and keep long labels readable", asy
       expect(Math.abs(layout.width - (await chart.boundingBox())!.width)).toBeLessThanOrEqual(1);
       if (width >= 768) {
         for (const share of layout.columnShares) {
-          expect(share).toBeGreaterThanOrEqual(0.15);
-          expect(share).toBeLessThanOrEqual(0.25);
+          if (selector === ".ranking-chart") {
+            expect(share).toBeCloseTo(0.25, 2);
+          } else {
+            expect(share).toBeGreaterThanOrEqual(0.15);
+            expect(share).toBeLessThanOrEqual(0.25);
+          }
         }
       }
       expect(layout.arrowsFollowLabels).toBe(true);

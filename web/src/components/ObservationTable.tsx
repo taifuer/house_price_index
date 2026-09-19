@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, ChartNoAxesCombined, ExternalLink } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink } from "lucide-react";
 
 import type { DatasetDescriptor } from "../types";
 import { formatMetric, formatPct, formatSizeBand } from "../lib/format";
@@ -52,7 +52,7 @@ export function ObservationTable({ rows, descriptor, history = false, onViewCity
         <table aria-label={label}>
           <colgroup>
             {columns.map((column) => <col key={column.key} className={`data-column-${column.key}`} />)}
-            <col className="data-column-source" />
+            {history && <col className="data-column-source" />}
           </colgroup>
           <thead>
             <tr>
@@ -64,7 +64,7 @@ export function ObservationTable({ rows, descriptor, history = false, onViewCity
                   </button>
                 </th>
               ))}
-              <th className="data-source" scope="col">来源</th>
+              {history && <th className="data-source" scope="col">来源</th>}
             </tr>
           </thead>
           <tbody>
@@ -75,7 +75,7 @@ export function ObservationTable({ rows, descriptor, history = false, onViewCity
                   <th scope="row">
                     {onViewCity ? (
                       <button className="data-city-link" type="button" title={`查看${row.city}走势`} aria-label={`查看${row.city}走势`} onClick={() => onViewCity(row.city)}>
-                        {row.city}<ChartNoAxesCombined size={15} aria-hidden="true" />
+                        {row.city}
                       </button>
                     ) : row.city}
                   </th>
@@ -87,14 +87,14 @@ export function ObservationTable({ rows, descriptor, history = false, onViewCity
                   <span className="data-number">{row.change == null ? "—" : formatPct(row.change)}</span>
                 </td>
                 {!history && <td className="data-tier">{row.tier}</td>}
-                <td className="data-source">
+                {history && <td className="data-source">
                   {row.source?.url ? (
                     <a className="source-link" href={row.source.url} target="_blank" rel="noreferrer" title={row.source.title} aria-label={`查看${row.period}统计局原文`}><ExternalLink size={15} /></a>
                   ) : "—"}
-                </td>
+                </td>}
               </tr>
             ))}
-            {!sorted.length && <tr><td className="data-table-empty" colSpan={columns.length + 1}>没有匹配的数据</td></tr>}
+            {!sorted.length && <tr><td className="data-table-empty" colSpan={columns.length + (history ? 1 : 0)}>没有匹配的数据</td></tr>}
           </tbody>
         </table>
       </div>
