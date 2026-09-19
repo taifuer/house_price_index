@@ -4,6 +4,7 @@ import { AppHeader } from "./components/AppHeader";
 import { FilterDrawer } from "./components/FilterDrawer";
 import type { FilterSelection } from "./components/FilterDrawer";
 import { ScrollJump } from "./components/ScrollJump";
+import type { DataView } from "./components/DataViewToggle";
 import { datasetForSelection, loadManifest, loadShard } from "./lib/data";
 import type { DatasetDescriptor, DatasetShard, Manifest, TrendMode, TrendRange } from "./types";
 
@@ -63,6 +64,8 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
   const [trendMode, setTrendMode] = useState<TrendMode>(initialTrendMode);
   const [overallRange, setOverallRange] = useState<TrendRange>(() => initialTrendRange("range", "10y"));
   const [cityRange, setCityRange] = useState<TrendRange>(() => initialTrendRange("cityRange", "5y"));
+  const [rankingView, setRankingView] = useState<DataView>("chart");
+  const [cityView, setCityView] = useState<DataView>("chart");
 
   useEffect(() => {
     let active = true;
@@ -138,7 +141,7 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
         onSelectionChange={updateSelection}
       />
       <AppHeader
-        title={manifest.title}
+        title="全国 70 城房价指数"
         filterOpen={filterOpen}
         activeFilterCount={activeFilterCount}
         onToggleFilter={() => setFilterOpen((value) => !value)}
@@ -154,6 +157,10 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
               descriptor={descriptor}
               shard={shard}
               period={period}
+              rankingView={rankingView}
+              onRankingViewChange={setRankingView}
+              cityView={cityView}
+              onCityViewChange={setCityView}
               selectedCities={selectedCities}
               onSelectedCitiesChange={setSelectedCities}
               trendMode={trendMode}

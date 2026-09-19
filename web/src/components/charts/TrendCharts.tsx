@@ -3,13 +3,16 @@ import type { EChartsCoreOption } from "echarts/core";
 
 import { CityPicker } from "../CityPicker";
 import { EChart } from "../EChart";
+import { DataViewToggle, type DataView } from "../DataViewToggle";
+import { ObservationTable } from "../ObservationTable";
 import { Segmented } from "../Segmented";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { CITY_SERIES_COLORS, reconcileCityColors } from "../../lib/cityColors";
 import { buildOverallTrend, buildTierTrend, marketBreadth } from "../../lib/data";
+import { buildObservations } from "../../lib/observations";
 import { COLORS, axisLabelStyle, firstPeriodByYear, splitLineStyle } from "../../lib/chartTheme";
 import { completeMonths, formatPct, metricAxisName, periodsForRange, roundOne, summarizePeriodRanges } from "../../lib/format";
-import type { CityTier, DatasetShard, Manifest, TrendMode, TrendRange } from "../../types";
+import type { CityTier, DatasetDescriptor, DatasetShard, Manifest, TrendMode, TrendRange } from "../../types";
 
 const rangeOptions: ReadonlyArray<{ value: TrendRange; label: string }> = [
   { value: "all", label: "全部" },
@@ -267,6 +270,9 @@ export function OverallTrendChart({
 }
 
 interface CityTrendChartProps extends TrendProps {
+  descriptor: DatasetDescriptor;
+  view: DataView;
+  onViewChange: (view: DataView) => void;
   selectedCities: string[];
   onSelectedCitiesChange: (cities: string[]) => void;
   range: TrendRange;
@@ -274,6 +280,9 @@ interface CityTrendChartProps extends TrendProps {
 }
 
 export function CityTrendChart({
+  descriptor,
+  view,
+  onViewChange,
   manifest,
   shard,
   filePrefix,
@@ -284,8 +293,13 @@ export function CityTrendChart({
   onRangeChange,
 }: CityTrendChartProps) {
   const isMobile = useMediaQuery("(max-width: 767px)");
-  const periods = shard.periods.length ? completeMonths(shard.periods[0]!, shard.periods.at(-1)!) : [];
-  const visiblePeriods = periodsForRange(periods, range);
+  const visiblePeriods = useMemo(() => {
+    const periods = shard.periods.length ? completeMonths(shard.periods[0]!, shard.periods.at(-1)!) : [];
+    return periodsForRange(periods, range);
+  }, [range, shard]);
+  const tableRows = useMemo(() => view === "data"
+    ? buildObservations(manifest, shard, visiblePeriods, selectedCities)
+    : [], [manifest, selectedCities, shard, view, visiblePeriods]);
   const rowsByPeriod = new Map(shard.periods.map((period, index) => [period, shard.values[index] ?? []]));
   const cityIndexes = new Map(manifest.cities.map((city, index) => [city.name, index]));
   const [cityColors, setCityColors] = useState(() => reconcileCityColors(selectedCities, new Map()));
@@ -362,9 +376,12 @@ export function CityTrendChart({
 
   return (
     <div className="chart-block city-trend-chart">
-      <div className="chart-heading-row trend-chart-heading">
+      <div className="chart-heading-row trend-chart-heading data-chart-heading">
         <h3>走势对比</h3>
-        <Segmented value={range} options={rangeOptions} onChange={onRangeChange} label="走势对比时间范围" />
+        <DataViewToggle value={view} onChange={onViewChange} label="走势对比显示方式" />
+        <div className="data-chart-filter">
+          <Segmented value={range} options={rangeOptions} onChange={onRangeChange} label="走势对比时间范围" />
+        </div>
       </div>
       <CityPicker
         cities={manifest.cities}
@@ -373,7 +390,14 @@ export function CityTrendChart({
         maxSelected={CITY_SERIES_COLORS.length}
       />
       {selectedCities.length ? (
-        <EChart option={option} height={425} ariaLabel="选中城市价格走势对比" fileName={`${filePrefix}-走势对比`} />
+        view === "data" ? (
+          <ObservationTable
+            key={`${descriptor.id}-${range}-${selectedCities.join(",")}`}
+            rows={tableRows}
+            descriptor={descriptor}
+            history
+          />
+        ) : <EChart option={option} height={425} ariaLabel="选中城市价格走势对比" fileName={`${filePrefix}-走势对比`} />
       ) : (
         <div className="empty-chart">请选择至少一个城市</div>
       )}

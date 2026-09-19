@@ -8,6 +8,8 @@ interface CollapsibleSectionProps {
   children: ReactNode;
   actions?: ReactNode;
   defaultOpen?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export function CollapsibleSection({
@@ -16,8 +18,11 @@ export function CollapsibleSection({
   children,
   actions,
   defaultOpen = true,
+  open: controlledOpen,
+  onOpenChange,
 }: CollapsibleSectionProps) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [internalOpen, setInternalOpen] = useState(defaultOpen);
+  const open = controlledOpen ?? internalOpen;
   const sectionId = `section-${title.replace(/\s+/g, "-")}`;
   return (
     <section className={`collapsible-section${open ? " is-open" : ""}`}>
@@ -25,7 +30,7 @@ export function CollapsibleSection({
         <button
           type="button"
           className="section-toggle"
-          onClick={() => setOpen((current) => !current)}
+          onClick={() => { setInternalOpen(!open); onOpenChange?.(!open); }}
           aria-expanded={open}
           aria-controls={sectionId}
         >

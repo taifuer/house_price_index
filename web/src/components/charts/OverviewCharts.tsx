@@ -2,9 +2,12 @@ import { useMemo, useState } from "react";
 import type { EChartsCoreOption } from "echarts/core";
 
 import { EChart } from "../EChart";
+import { DataViewToggle, type DataView } from "../DataViewToggle";
+import { ObservationTable } from "../ObservationTable";
 import { Segmented } from "../Segmented";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { buildFrequencyDistribution } from "../../lib/data";
+import { buildObservations } from "../../lib/observations";
 import { formatMetric, formatPct, metricAxisName, roundOne } from "../../lib/format";
 import {
   axisLabelStyle,
@@ -13,7 +16,7 @@ import {
   COLORS,
   splitLineStyle,
 } from "../../lib/chartTheme";
-import type { CityDatum, CityTier } from "../../types";
+import type { CityDatum, CityTier, DatasetDescriptor, DatasetShard, Manifest } from "../../types";
 
 type TierFilter = "全部" | CityTier;
 
@@ -38,9 +41,22 @@ interface OverviewChartProps {
   metric: string;
 }
 
-export function RankingChart({ data, filePrefix, metric }: OverviewChartProps) {
+interface RankingChartProps extends OverviewChartProps {
+  manifest: Manifest;
+  shard: DatasetShard;
+  descriptor: DatasetDescriptor;
+  period: string;
+  view: DataView;
+  onViewChange: (view: DataView) => void;
+  onViewCity: (city: string) => void;
+}
+
+export function RankingChart({ data, filePrefix, metric, manifest, shard, descriptor, period, view, onViewChange, onViewCity }: RankingChartProps) {
   const isMobile = useMediaQuery("(max-width: 767px)");
   const [tier, setTier] = useState<TierFilter>("全部");
+  const tableRows = useMemo(() => view === "data"
+    ? buildObservations(manifest, shard, [period]).filter((row) => tier === "全部" || row.tier === tier)
+    : [], [manifest, period, shard, tier, view]);
   const visible = useMemo(
     () => (tier === "全部" ? data : data.filter((datum) => datum.tier === tier)),
     [data, tier],
@@ -127,22 +143,34 @@ export function RankingChart({ data, filePrefix, metric }: OverviewChartProps) {
 
   return (
     <div className="chart-block ranking-chart">
-      <div className="chart-heading-row">
+      <div className="chart-heading-row data-chart-heading">
         <h3>城市排名</h3>
-        <Segmented
-          label="城市层级"
-          value={tier}
-          onChange={setTier}
-          options={(["全部", "一线", "二线", "三线"] as TierFilter[]).map((value) => ({ value, label: value }))}
-        />
+        <DataViewToggle value={view} onChange={onViewChange} label="城市排名显示方式" />
+        <div className="data-chart-filter">
+          <Segmented
+            label="城市层级"
+            value={tier}
+            onChange={setTier}
+            options={(["全部", "一线", "二线", "三线"] as TierFilter[]).map((value) => ({ value, label: value }))}
+          />
+        </div>
       </div>
-      <EChart
-        option={option}
-        height={isMobile ? 500 : 555}
-        ariaLabel="城市价格变动排名"
-        fileName={`${filePrefix}-城市排名`}
-        showReset={!isMobile}
-      />
+      {view === "data" ? (
+        <ObservationTable
+          key={`${descriptor.id}-${period}-${tier}`}
+          rows={tableRows}
+          descriptor={descriptor}
+          onViewCity={onViewCity}
+        />
+      ) : (
+        <EChart
+          option={option}
+          height={isMobile ? 500 : 555}
+          ariaLabel="城市价格变动排名"
+          fileName={`${filePrefix}-城市排名`}
+          showReset={!isMobile}
+        />
+      )}
     </div>
   );
 }

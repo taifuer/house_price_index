@@ -113,7 +113,7 @@ test("defaults to the latest published month", async ({ page }) => {
 
 test("renders the July 2026 dashboard without horizontal overflow", async ({ page }, testInfo) => {
   await page.goto("/?view=resale-all-mom&period=2026-07");
-  await expect(page.locator(".app-title")).toHaveText("全国 70 城商品住宅价格指数");
+  await expect(page.locator(".app-title")).toHaveText("全国 70 城房价指数");
   await expect(page.locator(".summary-item").nth(0)).toContainText("70/70");
   await expect(page.locator(".summary-item").last()).toContainText(/\[-?\d+\.\d%, \+?\d+\.\d%\]/);
   await expect(page.locator(".section-title-label")).toHaveText(["价格概览", "价格趋势"]);

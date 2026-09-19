@@ -1,10 +1,11 @@
-import { lazy, Suspense, useMemo } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink } from "lucide-react";
 
 import { cityDataForPeriod } from "../lib/data";
 import { formatMetric, formatPeriod, formatSizeBand } from "../lib/format";
 import type { DatasetDescriptor, DatasetShard, Manifest, TrendMode, TrendRange } from "../types";
 import { CollapsibleSection } from "./CollapsibleSection";
+import type { DataView } from "./DataViewToggle";
 import { SummaryGrid } from "./SummaryGrid";
 import {
   DistributionChart,
@@ -26,6 +27,10 @@ interface DashboardContentProps {
   descriptor: DatasetDescriptor;
   shard: DatasetShard;
   period: string;
+  rankingView: DataView;
+  onRankingViewChange: (view: DataView) => void;
+  cityView: DataView;
+  onCityViewChange: (view: DataView) => void;
   selectedCities: string[];
   onSelectedCitiesChange: (cities: string[]) => void;
   trendMode: TrendMode;
@@ -41,6 +46,10 @@ export default function DashboardContent({
   descriptor,
   shard,
   period,
+  rankingView,
+  onRankingViewChange,
+  cityView,
+  onCityViewChange,
   selectedCities,
   onSelectedCitiesChange,
   trendMode,
@@ -50,6 +59,21 @@ export default function DashboardContent({
   cityRange,
   onCityRangeChange,
 }: DashboardContentProps) {
+  const [trendOpen, setTrendOpen] = useState(true);
+  const [focusCityTrend, setFocusCityTrend] = useState(false);
+  const cityTrendRef = useRef<HTMLDivElement>(null);
+  const viewCity = (city: string) => {
+    onSelectedCitiesChange([city]);
+    setTrendOpen(true);
+    onCityViewChange("chart");
+    setFocusCityTrend(true);
+  };
+  useEffect(() => {
+    if (!focusCityTrend || !cityTrendRef.current) return;
+    cityTrendRef.current.focus({ preventScroll: true });
+    cityTrendRef.current.scrollIntoView({ block: "start" });
+    setFocusCityTrend(false);
+  }, [focusCityTrend]);
   const cityData = useMemo(() => cityDataForPeriod(manifest, shard, period), [manifest, period, shard]);
   const periodIndex = shard.periods.indexOf(period);
   const source = shard.sources[periodIndex];
@@ -86,7 +110,18 @@ export default function DashboardContent({
         )}
       >
         <SummaryGrid data={cityData} manifest={manifest} />
-        <RankingChart data={cityData} filePrefix={filePrefix} metric={descriptor.metric} />
+        <RankingChart
+          data={cityData}
+          filePrefix={filePrefix}
+          metric={descriptor.metric}
+          manifest={manifest}
+          shard={shard}
+          descriptor={descriptor}
+          period={period}
+          view={rankingView}
+          onViewChange={onRankingViewChange}
+          onViewCity={viewCity}
+        />
         <div className="two-chart-grid">
           <ExtremeChart data={cityData} filePrefix={filePrefix} metric={descriptor.metric} />
           <DistributionChart data={cityData} filePrefix={filePrefix} metric={descriptor.metric} />
@@ -103,7 +138,7 @@ export default function DashboardContent({
         </Suspense>
       </CollapsibleSection>
 
-      <CollapsibleSection title="价格趋势" meta={trendMeta}>
+      <CollapsibleSection title="价格趋势" meta={trendMeta} open={trendOpen} onOpenChange={setTrendOpen}>
         <OverallTrendChart
           manifest={manifest}
           shard={shard}
@@ -123,16 +158,21 @@ export default function DashboardContent({
             filePrefix={filePrefix}
           />
         </Suspense>
-        <CityTrendChart
-          manifest={manifest}
-          shard={shard}
-          filePrefix={filePrefix}
-          metric={descriptor.metric}
-          selectedCities={selectedCities}
-          onSelectedCitiesChange={onSelectedCitiesChange}
-          range={cityRange}
-          onRangeChange={onCityRangeChange}
-        />
+        <div ref={cityTrendRef} className="city-trend-anchor" tabIndex={-1} aria-label="城市走势及历史数据">
+          <CityTrendChart
+            descriptor={descriptor}
+            view={cityView}
+            onViewChange={onCityViewChange}
+            manifest={manifest}
+            shard={shard}
+            filePrefix={filePrefix}
+            metric={descriptor.metric}
+            selectedCities={selectedCities}
+            onSelectedCitiesChange={onSelectedCitiesChange}
+            range={cityRange}
+            onRangeChange={onCityRangeChange}
+          />
+        </div>
       </CollapsibleSection>
     </>
   );
