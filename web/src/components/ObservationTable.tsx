@@ -25,7 +25,7 @@ export function ObservationTable({ rows, descriptor, history = false, onViewCity
   const columns: Array<{ key: ObservationSortKey; label: string; numeric?: boolean }> = [
     ...(history ? [{ key: "period" as const, label: "月份" }] : []),
     { key: "city", label: "城市" },
-    { key: "value", label: `${metric}指数`, numeric: true },
+    { key: "value", label: metric, numeric: true },
     { key: "change", label: "涨跌幅", numeric: true },
     ...(!history ? [{ key: "tier" as const, label: "层级" }] : []),
   ];
@@ -58,7 +58,7 @@ export function ObservationTable({ rows, descriptor, history = false, onViewCity
             <tr>
               {columns.map((column) => (
                 <th key={column.key} scope="col" className={column.numeric ? "numeric" : column.key === "tier" ? "data-tier" : undefined} aria-sort={sort.key === column.key ? sort.direction === "asc" ? "ascending" : "descending" : "none"}>
-                  <button type="button" onClick={() => updateSort(column.key)} title={column.key === "value" ? indexBase : undefined}>
+                  <button type="button" onClick={() => updateSort(column.key)} title={column.key === "value" ? `${metric}指数，${indexBase}` : undefined}>
                     <span>{column.label}</span>
                     {sort.key !== column.key ? <ArrowUpDown size={13} /> : sort.direction === "asc" ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
                   </button>

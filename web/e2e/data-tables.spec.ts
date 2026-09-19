@@ -36,6 +36,8 @@ test("monthly data shows all cities without search, pagination or download and s
   }
   await ranking.getByRole("button", { name: "数据表", exact: true }).click();
   const table = ranking.getByRole("table", { name: "当月城市数据", exact: true });
+  await expect(table.getByRole("columnheader")).toHaveText(["城市", "环比", "涨跌幅", "层级", "来源"]);
+  await expect(table.getByRole("button", { name: "环比", exact: true })).toHaveAttribute("title", "环比指数，上月 = 100");
   await expect(table.locator("tbody tr")).toHaveCount(70);
   await expect(ranking.getByRole("searchbox")).toHaveCount(0);
   await expect(ranking.getByRole("combobox")).toHaveCount(0);
@@ -136,7 +138,7 @@ test("tables follow the dataset and keep missing months as blank observations", 
   const city = page.locator(".city-trend-chart");
   await city.getByRole("button", { name: "数据表", exact: true }).click();
   const table = city.getByRole("table", { name: "城市历史数据", exact: true });
-  await expect(table.getByRole("columnheader", { name: "累计平均同比指数" })).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: "累计平均同比", exact: true })).toBeVisible();
   const january = table.locator("tbody tr").filter({ hasText: "2026-01" });
   await expect(january.locator("td.numeric")).toHaveText(["—", "—"]);
   await expect(january.locator("a")).toHaveCount(0);
@@ -145,12 +147,12 @@ test("tables follow the dataset and keep missing months as blank observations", 
   await page.locator(".filter-toggle").click();
   await page.locator(".filter-list label").nth(3).locator("select").selectOption({ label: "同比" });
   await page.getByRole("button", { name: "完成", exact: true }).click();
-  await expect(table.getByRole("columnheader", { name: "同比指数", exact: true })).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: "同比", exact: true })).toBeVisible();
   await expect(table.locator("tbody tr").filter({ hasText: "2026-01" }).locator("td.numeric")).not.toHaveText(["—", "—"]);
 });
 
-test("tables scroll both ways with sticky headers and first columns without page overflow", async ({ page }, testInfo) => {
-  const widths = testInfo.project.name === "mobile" ? [320, 390, 768] : [1440];
+test("tables fit all columns without horizontal scrolling and keep headers fixed while scrolling vertically", async ({ page }, testInfo) => {
+  const widths = testInfo.project.name === "mobile" ? [320, 360, 390, 430, 768] : [320, 768, 1440];
   for (const width of widths) {
     await page.setViewportSize({ width, height: 844 });
     for (const selector of [".ranking-chart", ".city-trend-chart"]) {
@@ -173,7 +175,8 @@ test("tables scroll both ways with sticky headers and first columns without page
       expect(await scroll.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
       expect(await page.evaluate(() => scrollY)).toBe(pageY);
       await expect(scroll.locator("tbody tr").last()).toBeInViewport();
-      if (width < 768) expect(await scroll.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+      expect(await scroll.evaluate((element) => element.scrollLeft)).toBe(0);
+      expect(await scroll.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
       const controls = await chart.locator(".data-chart-heading > *").evaluateAll((elements) => elements.map((element) => {
         const rect = element.getBoundingClientRect();
@@ -197,14 +200,14 @@ test("tables scroll both ways with sticky headers and first columns without page
 
 test("full-width tables balance every column and keep long labels readable", async ({ page }, testInfo) => {
   await page.goto("/?view=resale-all-average&period=2026-08&cities=乌鲁木齐&cityRange=3y");
-  const widths = testInfo.project.name === "mobile" ? [320, 390, 768] : [1024, 1440, 1920];
+  const widths = testInfo.project.name === "mobile" ? [320, 360, 390, 430, 768] : [320, 1024, 1440, 1920];
   for (const width of widths) {
     await page.setViewportSize({ width, height: 844 });
     for (const selector of [".ranking-chart", ".city-trend-chart"]) {
       const chart = page.locator(selector);
       await chart.getByRole("button", { name: "数据表", exact: true }).click();
       const scroll = chart.locator(".data-table-scroll");
-      await expect(scroll.getByRole("columnheader", { name: "累计平均同比指数" })).toBeVisible();
+      await expect(scroll.getByRole("columnheader", { name: "累计平均同比", exact: true })).toBeVisible();
       const layout = await scroll.evaluate((element) => {
         const cells = [...element.querySelectorAll<HTMLTableCellElement>("th, td")];
         const overflowingCells = cells.filter((cell) => {
@@ -221,10 +224,11 @@ test("full-width tables balance every column and keep long labels readable", asy
           overflowingCells,
           width: element.getBoundingClientRect().width,
           columnShares: [...element.querySelectorAll("col")].map((column) => column.getBoundingClientRect().width / tableWidth),
+          arrowsFollowLabels: [...element.querySelectorAll("thead button")].every((button) =>
+            button.querySelector("span")!.getBoundingClientRect().right <= button.querySelector("svg")!.getBoundingClientRect().left + 1),
           horizontalOverflow: element.scrollWidth - element.clientWidth,
           visibleRight: element.getBoundingClientRect().left + element.clientWidth,
-          thirdColumnRight: row.children[2]!.getBoundingClientRect().right,
-          fourthColumnRight: row.children[3]!.getBoundingClientRect().right,
+          lastColumnRight: row.lastElementChild!.getBoundingClientRect().right,
         };
       });
       expect(layout.overflowingCells).toEqual([]);
@@ -235,11 +239,9 @@ test("full-width tables balance every column and keep long labels readable", asy
           expect(share).toBeLessThanOrEqual(0.25);
         }
       }
-      expect(layout.thirdColumnRight).toBeLessThanOrEqual(layout.visibleRight + 1);
-      if (selector === ".city-trend-chart" && width >= 390) {
-        expect(layout.fourthColumnRight).toBeLessThanOrEqual(layout.visibleRight + 1);
-      }
-      if (width >= 768) expect(layout.horizontalOverflow).toBeLessThanOrEqual(1);
+      expect(layout.arrowsFollowLabels).toBe(true);
+      expect(layout.lastColumnRight).toBeLessThanOrEqual(layout.visibleRight + 1);
+      expect(layout.horizontalOverflow).toBeLessThanOrEqual(1);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
       if (width === 320) {
         await chart.evaluate((element) => window.scrollTo({ top: element.getBoundingClientRect().top + scrollY - 70, behavior: "instant" }));

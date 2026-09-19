@@ -584,21 +584,11 @@ a {
 }
 
 .observation-table {
-  --data-period-width: 116px;
-  --data-city-width: 120px;
-  --data-value-width: 144px;
-  --data-change-width: 120px;
-  --data-tier-width: 88px;
-  --data-source-width: 56px;
   min-width: 0;
   width: 100%;
   padding-top: 6px;
   color: #344054;
   font-size: 13px;
-}
-
-.observation-table.is-history {
-  --data-city-width: 104px;
 }
 
 .data-table-toolbar {
@@ -642,15 +632,10 @@ a {
 
 .data-table-scroll table {
   width: 100%;
-  min-width: calc(var(--data-city-width) + var(--data-value-width) + var(--data-change-width) + var(--data-tier-width) + var(--data-source-width));
   table-layout: fixed;
   border-spacing: 0;
   border-collapse: separate;
   font-variant-numeric: tabular-nums;
-}
-
-.is-history .data-table-scroll table {
-  min-width: calc(var(--data-period-width) + var(--data-city-width) + var(--data-value-width) + var(--data-change-width) + var(--data-source-width));
 }
 
 .data-column-period,
@@ -718,11 +703,6 @@ a {
 
 .data-table-scroll thead button svg {
   flex: 0 0 13px;
-}
-
-.data-table-scroll th.numeric button {
-  flex-direction: row-reverse;
-  text-align: right;
 }
 
 .data-table-scroll .data-source,
@@ -1391,30 +1371,33 @@ a {
     max-height: min(440px, calc(100svh - 200px));
   }
 
-  .observation-table {
-    --data-period-width: 90px;
-    --data-city-width: 100px;
-    --data-value-width: 88px;
-    --data-change-width: 88px;
-    --data-tier-width: 60px;
-    --data-source-width: 44px;
-  }
-
-  .observation-table.is-history {
-    --data-city-width: 80px;
-  }
-
-  .data-column-period { width: var(--data-period-width); }
-  .data-column-city { width: var(--data-city-width); }
-  .data-column-value { width: var(--data-value-width); }
-  .data-column-change { width: var(--data-change-width); }
-  .data-column-tier { width: var(--data-tier-width); }
-  .data-column-source { width: var(--data-source-width); }
+  .data-column-city { width: 28%; }
+  .data-column-value,
+  .data-column-change { width: 21%; }
+  .data-column-tier { width: 17%; }
+  .data-column-source { width: 13%; }
+  .is-history .data-column-period { width: 26%; }
+  .is-history .data-column-city { width: 22%; }
+  .is-history .data-column-value { width: 18%; }
 
   .data-table-scroll th,
   .data-table-scroll td {
     height: 44px;
-    padding: 4px 8px;
+    padding: 4px 3px;
+  }
+
+  .data-table-scroll thead button {
+    gap: 2px;
+  }
+
+  .data-city-link {
+    gap: 3px;
+  }
+
+  .data-number {
+    width: 7ch;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .data-table-scroll .source-link {
