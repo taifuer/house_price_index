@@ -3,6 +3,7 @@ import { ExternalLink } from "lucide-react";
 
 import { cityDataForPeriod } from "../lib/data";
 import { formatMetric, formatPeriod, formatSizeBand } from "../lib/format";
+import type { IntervalSelection } from "../lib/intervalIndex";
 import type { DatasetDescriptor, DatasetShard, Manifest, TrendMode, TrendRange } from "../types";
 import { CollapsibleSection } from "./CollapsibleSection";
 import type { DataView } from "./DataViewToggle";
@@ -14,6 +15,7 @@ import {
   TierComparisonChart,
 } from "./charts/OverviewCharts";
 import { CityTrendChart, OverallTrendChart } from "./charts/TrendCharts";
+import { IntervalIndexChart } from "./charts/IntervalIndexChart";
 
 const CityMonthlyView = lazy(() => import("./charts/AdvancedCharts").then((module) => ({
   default: module.CityMonthlyView,
@@ -39,6 +41,8 @@ interface DashboardContentProps {
   onOverallRangeChange: (range: TrendRange) => void;
   cityRange: TrendRange;
   onCityRangeChange: (range: TrendRange) => void;
+  intervalSelection: IntervalSelection;
+  onIntervalSelectionChange: (selection: IntervalSelection) => void;
 }
 
 export default function DashboardContent({
@@ -58,6 +62,8 @@ export default function DashboardContent({
   onOverallRangeChange,
   cityRange,
   onCityRangeChange,
+  intervalSelection,
+  onIntervalSelectionChange,
 }: DashboardContentProps) {
   const [trendOpen, setTrendOpen] = useState(true);
   const [focusCityTrend, setFocusCityTrend] = useState(false);
@@ -173,6 +179,13 @@ export default function DashboardContent({
             onRangeChange={onCityRangeChange}
           />
         </div>
+        <IntervalIndexChart
+          manifest={manifest}
+          descriptor={descriptor}
+          shard={shard}
+          selection={intervalSelection}
+          onSelectionChange={onIntervalSelectionChange}
+        />
       </CollapsibleSection>
     </>
   );

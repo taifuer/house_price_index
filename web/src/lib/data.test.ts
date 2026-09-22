@@ -69,4 +69,11 @@ describe("formatting", () => {
     expect(periodsForRange(periods, "10y")).toHaveLength(120);
     expect(periodsForRange(periods, "all")).toHaveLength(periods.length);
   });
+
+  it("can list every missing range without changing the default abbreviated notes", () => {
+    const periods = ["2026-08", "2026-04", "2025-12", "2026-01", "2026-06", "2026-04"];
+    expect(summarizePeriodRanges(periods)).toBe("2025年12月 至 2026年1月、2026年4月、2026年6月 等");
+    expect(summarizePeriodRanges(periods, null)).toBe("2025年12月 至 2026年1月、2026年4月、2026年6月、2026年8月");
+    expect(summarizePeriodRanges([], null)).toBe("");
+  });
 });

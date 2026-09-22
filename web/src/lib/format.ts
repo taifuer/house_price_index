@@ -55,7 +55,7 @@ export function periodsForRange(periods: string[], range: TrendRange): string[] 
   return periods.slice(-monthsByRange[range]);
 }
 
-export function summarizePeriodRanges(periods: string[]): string {
+export function summarizePeriodRanges(periods: string[], maxRanges: number | null = 3): string {
   const ordered = [...new Set(periods)].sort();
   if (ordered.length === 0) return "";
 
@@ -82,5 +82,6 @@ export function summarizePeriodRanges(periods: string[]): string {
       ? formatPeriod(rangeStart)
       : `${formatPeriod(rangeStart)} 至 ${formatPeriod(rangeEnd)}`,
   );
-  return labels.length > 3 ? `${labels.slice(0, 3).join("、")} 等` : labels.join("、");
+  return maxRanges != null && labels.length > maxRanges
+    ? `${labels.slice(0, maxRanges).join("、")} 等` : labels.join("、");
 }

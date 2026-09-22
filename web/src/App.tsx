@@ -6,6 +6,7 @@ import type { FilterSelection } from "./components/FilterDrawer";
 import { ScrollJump } from "./components/ScrollJump";
 import type { DataView } from "./components/DataViewToggle";
 import { datasetForSelection, loadManifest, loadShard } from "./lib/data";
+import { resolveIntervalSelection } from "./lib/intervalIndex";
 import type { DatasetDescriptor, DatasetShard, Manifest, TrendMode, TrendRange } from "./types";
 
 const DashboardContent = lazy(() => import("./components/DashboardContent"));
@@ -66,6 +67,20 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
   const [cityRange, setCityRange] = useState<TrendRange>(() => initialTrendRange("cityRange", "5y"));
   const [rankingView, setRankingView] = useState<DataView>("chart");
   const [cityView, setCityView] = useState<DataView>("chart");
+  const intervalDescriptor = datasetForSelection(manifest, descriptor.houseType, descriptor.sizeBand, "环比") ?? descriptor;
+  const defaultInterval = useMemo(() => resolveIntervalSelection(manifest, intervalDescriptor), [manifest, intervalDescriptor]);
+  const [intervalSelection, setIntervalSelection] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return resolveIntervalSelection(manifest, intervalDescriptor, {
+      city: params.get("indexCity") ?? undefined,
+      start: params.get("indexStart") ?? undefined,
+      end: params.get("indexEnd") ?? undefined,
+    });
+  });
+  const effectiveInterval = useMemo(
+    () => resolveIntervalSelection(manifest, intervalDescriptor, intervalSelection),
+    [manifest, intervalDescriptor, intervalSelection],
+  );
 
   useEffect(() => {
     let active = true;
@@ -94,8 +109,19 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
     else params.set("cityRange", cityRange);
     if (selectedCities.join(",") === DEFAULT_CITIES.join(",")) params.delete("cities");
     else params.set("cities", selectedCities.join(","));
+    const defaultIndex = effectiveInterval.city === defaultInterval.city
+      && effectiveInterval.start === defaultInterval.start && effectiveInterval.end === defaultInterval.end;
+    for (const [key, value] of [
+      ["indexCity", effectiveInterval.city],
+      ["indexStart", effectiveInterval.start],
+      ["indexEnd", effectiveInterval.end],
+    ] as const) {
+      if (defaultIndex) params.delete(key);
+      else params.set(key, value);
+    }
+    params.delete("indexFill");
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
-  }, [cityRange, descriptor.id, overallRange, period, selectedCities, trendMode]);
+  }, [cityRange, defaultInterval, descriptor.id, effectiveInterval, overallRange, period, selectedCities, trendMode]);
 
   const selection: FilterSelection = {
     period,
@@ -169,6 +195,8 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
               onOverallRangeChange={setOverallRange}
               cityRange={cityRange}
               onCityRangeChange={setCityRange}
+              intervalSelection={effectiveInterval}
+              onIntervalSelectionChange={setIntervalSelection}
             />
           </Suspense>
         )}

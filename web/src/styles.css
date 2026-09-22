@@ -266,14 +266,15 @@ a {
   gap: 15px;
 }
 
-.filter-list label {
+.filter-list label,
+.interval-controls label {
   display: grid;
   gap: 7px;
   color: #344054;
   font-size: 13px;
 }
 
-.filter-list select {
+.filter-select select {
   width: 100%;
   height: 40px;
   padding: 0 36px 0 12px;
@@ -307,7 +308,7 @@ a {
   border-color: #98a2b3;
 }
 
-.filter-list select:focus {
+.filter-select select:focus {
   border-color: #4f83cc;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
@@ -581,6 +582,81 @@ a {
 
 .city-trend-anchor:focus {
   outline: none;
+}
+
+.interval-meta {
+  min-width: 0;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.interval-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px 32px;
+  margin: 16px 0 12px;
+}
+
+.interval-controls {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) repeat(2, minmax(140px, 180px));
+  gap: 12px;
+  min-width: 0;
+}
+
+.interval-controls label {
+  min-width: 0;
+  font-size: 12px;
+}
+
+.interval-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(110px, 1fr));
+  gap: 24px;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.interval-summary dt {
+  color: #667085;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.interval-summary dd {
+  margin: 2px 0 0;
+  color: #111827;
+  font-size: 24px;
+  line-height: 34px;
+}
+
+.interval-estimate-marker {
+  margin-left: 3px;
+  font-size: 11px;
+  line-height: 0;
+  vertical-align: super;
+}
+
+.interval-incomplete {
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+}
+
+.interval-incomplete p {
+  margin: 0;
+  line-height: 1.7;
+}
+
+.interval-index-chart .interval-incomplete,
+.interval-index-chart .analysis-loader {
+  height: 360px;
+  min-height: 360px;
 }
 
 .observation-table {
@@ -1362,6 +1438,38 @@ a {
   .data-chart-filter {
     grid-column: 1 / -1;
     justify-self: stretch;
+  }
+
+  .interval-heading {
+    align-items: start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .interval-controls {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .interval-city {
+    grid-column: 1 / -1;
+  }
+
+  .interval-summary {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .interval-summary dd {
+    font-size: 22px;
+    line-height: 30px;
+  }
+
+  .interval-index-chart .interval-incomplete,
+  .interval-index-chart .analysis-loader {
+    height: 300px;
+    min-height: 300px;
   }
 
   .data-chart-filter > .segmented {

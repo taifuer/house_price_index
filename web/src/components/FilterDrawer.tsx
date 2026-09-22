@@ -1,18 +1,9 @@
-import { forwardRef, useCallback, useEffect, useRef, type ComponentPropsWithoutRef } from "react";
-import { ChevronDown, RotateCcw, X } from "lucide-react";
+import { useCallback, useEffect, useRef } from "react";
+import { RotateCcw, X } from "lucide-react";
 
 import type { DatasetDescriptor, Manifest } from "../types";
 import { formatMetric, formatPeriod, formatSizeBand } from "../lib/format";
-
-const FilterSelect = forwardRef<HTMLSelectElement, ComponentPropsWithoutRef<"select">>(
-  ({ children, ...props }, ref) => (
-    <span className="filter-select">
-      <select ref={ref} {...props}>{children}</select>
-      <ChevronDown size={16} aria-hidden="true" />
-    </span>
-  ),
-);
-FilterSelect.displayName = "FilterSelect";
+import { FilterSelect } from "./FilterSelect";
 
 export interface FilterSelection {
   period: string;

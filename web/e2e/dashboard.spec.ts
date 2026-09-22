@@ -104,7 +104,7 @@ test("defaults to the latest published month", async ({ page }) => {
     `二手住宅 · 环比 · ${year}年${Number(month)}月`,
   );
   await expect(page.locator(".summary-item").first()).toContainText("70/70");
-  await expect(page.locator(".chart-canvas svg")).toHaveCount(8);
+  await expect(page.locator(".chart-canvas svg")).toHaveCount(9);
   const heatmap = page.locator(".heatmap-chart");
   await expect(heatmap.locator("svg text").filter({ hasText: `${year.slice(-2)}年${Number(month)}月` })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
@@ -120,7 +120,7 @@ test("renders the July 2026 dashboard without horizontal overflow", async ({ pag
   await expect(page.locator(".section-title-meta").first()).toHaveText("二手住宅 · 环比 · 2026年7月");
   await expect(page.locator(".section-title-meta").nth(1)).toHaveText("二手住宅 · 环比");
   await expect(page.getByRole("button", { name: /下载.*CSV/ })).toHaveCount(0);
-  await expect(page.locator(".chart-canvas")).toHaveCount(8);
+  await expect(page.locator(".chart-canvas")).toHaveCount(9);
   await expect(page.locator(".collapsible-section")).toHaveCount(2);
   await expect(page.locator(".footer-copyright")).toHaveText(`© ${new Date().getFullYear()} House Price Index`);
   await expect(page.locator(".footer-copyright")).toHaveCSS("white-space", "nowrap");
@@ -427,11 +427,11 @@ test("groups monthly views with overview and trend sections", async ({ page }, t
     "城市层级对比",
     "城市环比与同比",
   ]);
-  await expect(trendSection.getByRole("heading", { level: 3 })).toHaveText(["整体趋势", "城市趋势", "走势对比"]);
+  await expect(trendSection.getByRole("heading", { level: 3 })).toHaveText(["整体趋势", "城市趋势", "走势对比", "区间指数"]);
   await expect(page.locator(".analysis-view-tabs")).toHaveCount(0);
   await expect(heatmap.locator(".chart-canvas svg")).toBeVisible();
   await expect(comparison.locator(".chart-canvas svg")).toBeVisible();
-  await expect(page.locator(".chart-canvas")).toHaveCount(8);
+  await expect(page.locator(".chart-canvas")).toHaveCount(9);
   await expect(heatmap.getByText("层级", { exact: true })).toHaveCount(0);
   await expect(heatmap.getByText("时间范围", { exact: true })).toHaveCount(0);
   const controlBoxes = await heatmap.locator(".analysis-filter-control").evaluateAll((controls) => controls.map((control) => {
