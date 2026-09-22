@@ -539,7 +539,7 @@ test("tier trend and city selection render client-side", async ({ page }, testIn
   const defaultCityTrend = page.locator(".city-trend-chart");
   await defaultCityTrend.screenshot({ path: `/tmp/house-v4-city-trend-default-${testInfo.project.name}.png` });
 
-  const cityPicker = page.locator(".city-picker");
+  const cityPicker = page.locator(".city-trend-chart .city-picker");
   await cityPicker.getByRole("button", { name: "选择城市" }).click();
   await expect(cityPicker.locator(".city-option-group-title")).toHaveText(["一线（4）", "二线（31）", "三线（35）"]);
   await page.screenshot({ path: `/tmp/house-v4-city-picker-${testInfo.project.name}.png`, fullPage: false });

@@ -601,9 +601,22 @@ a {
   margin: 16px 0 12px;
 }
 
+.interval-range-controls {
+  display: flex;
+  flex: 1 1 560px;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  min-width: 0;
+}
+
+.interval-range-controls > .segmented button {
+  height: 38px;
+}
+
 .interval-controls {
   display: grid;
-  grid-template-columns: minmax(140px, 180px) repeat(2, minmax(140px, 180px));
+  grid-template-columns: repeat(2, minmax(140px, 180px));
   gap: 12px;
   min-width: 0;
 }
@@ -618,6 +631,7 @@ a {
   grid-template-columns: repeat(2, minmax(110px, 1fr));
   gap: 24px;
   margin: 0;
+  margin-left: auto;
   font-variant-numeric: tabular-nums;
 }
 
@@ -639,6 +653,76 @@ a {
   font-size: 11px;
   line-height: 0;
   vertical-align: super;
+}
+
+.city-color-swatch {
+  display: inline-block;
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.interval-results {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.interval-results th,
+.interval-results td {
+  padding: 9px 0 9px 12px;
+  border-bottom: 1px solid #edf0f3;
+  text-align: right;
+  font-weight: 400;
+}
+
+.interval-results th:first-child {
+  padding-left: 0;
+  text-align: left;
+}
+
+.interval-results thead th {
+  color: #667085;
+  font-size: 12px;
+}
+
+.interval-results .city-color-swatch,
+.interval-tooltip .city-color-swatch {
+  margin-right: 6px;
+}
+
+.interval-fill-note p {
+  margin: 0;
+}
+
+.interval-tooltip {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.interval-tooltip table {
+  margin-top: 4px;
+  border-collapse: collapse;
+}
+
+.interval-tooltip th,
+.interval-tooltip td {
+  padding: 2px 0 2px 10px;
+  text-align: right;
+  font-weight: 400;
+}
+
+.interval-tooltip th:first-child {
+  padding-left: 0;
+  text-align: left;
+}
+
+.interval-tooltip thead,
+.interval-tooltip small {
+  color: #667085;
+  font-size: 11px;
 }
 
 .interval-incomplete {
@@ -1451,8 +1535,9 @@ a {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .interval-city {
-    grid-column: 1 / -1;
+  .interval-range-controls > .segmented {
+    display: flex;
+    width: 100%;
   }
 
   .interval-summary {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Check, Search, X } from "lucide-react";
 import type { CityDefinition, CityTier } from "../types";
 
@@ -9,12 +9,16 @@ interface CityPickerProps {
   selected: string[];
   onChange: (cities: string[]) => void;
   maxSelected?: number;
+  label?: string;
+  colors?: ReadonlyMap<string, string>;
 }
 
-export function CityPicker({ cities, selected, onChange, maxSelected = 8 }: CityPickerProps) {
+export function CityPicker({ cities, selected, onChange, maxSelected = 8, label = "城市选择", colors }: CityPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
   const groups = useMemo(() => {
     const normalizedQuery = query.trim();
 
@@ -49,11 +53,19 @@ export function CityPicker({ cities, selected, onChange, maxSelected = 8 }: City
   };
 
   return (
-    <div className={`city-picker${open ? " is-open" : ""}`} ref={rootRef}>
+    <div className={`city-picker${open ? " is-open" : ""}`} ref={rootRef} role="group" aria-label={label}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && open) {
+          event.stopPropagation();
+          setOpen(false);
+          triggerRef.current?.focus();
+        }
+      }}>
       <div className="city-picker-control">
         <div className="city-tags">
           {selected.map((city) => (
             <span className="city-tag" key={city}>
+              {colors?.has(city) && <span className="city-color-swatch" style={{ backgroundColor: colors.get(city) }} aria-hidden="true" />}
               {city}
               <button type="button" onClick={() => toggle(city)} title={`移除${city}`} aria-label={`移除${city}`}>
                 <X size={13} />
@@ -62,15 +74,15 @@ export function CityPicker({ cities, selected, onChange, maxSelected = 8 }: City
           ))}
           {selected.length === 0 && <span className="city-placeholder">请选择城市</span>}
         </div>
-        <button type="button" className="city-picker-trigger" onClick={() => setOpen((value) => !value)}>
+        <button ref={triggerRef} type="button" className="city-picker-trigger" aria-expanded={open} aria-controls={open ? menuId : undefined} onClick={() => setOpen((value) => !value)}>
           选择城市
         </button>
       </div>
       {open && (
-        <div className="city-picker-menu">
+        <div id={menuId} className="city-picker-menu">
           <label className="city-search">
             <Search size={15} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索城市" autoFocus />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索城市" aria-label="搜索城市" autoFocus />
           </label>
           <div className="city-options">
             {groups.map((group) => (
@@ -86,7 +98,7 @@ export function CityPicker({ cities, selected, onChange, maxSelected = 8 }: City
                     const checked = selected.includes(city.name);
                     const disabled = !checked && selected.length >= maxSelected;
                     return (
-                      <button key={city.name} type="button" disabled={disabled} onClick={() => toggle(city.name)}>
+                      <button key={city.name} type="button" aria-pressed={checked} disabled={disabled} onClick={() => toggle(city.name)}>
                         <span className={`city-check${checked ? " is-checked" : ""}`}>
                           {checked && <Check size={13} />}
                         </span>

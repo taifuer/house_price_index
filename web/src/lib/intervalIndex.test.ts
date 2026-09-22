@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { DatasetDescriptor, DatasetShard, Manifest } from "../types";
 import { completeMonths } from "./format";
-import { buildIntervalIndex, intervalLineSegments, resolveIntervalSelection } from "./intervalIndex";
+import { buildIntervalIndex, groupIntervalMissingPeriods, intervalLineSegments, intervalStartForRange, resolveIntervalSelection } from "./intervalIndex";
 
 const shard: DatasetShard = {
   schemaVersion: 1, id: "resale-all-mom", recordCount: 4,
@@ -106,23 +106,74 @@ describe("interval index", () => {
 
 describe("interval selection", () => {
   it("defaults to Beijing and five years ending in the latest MoM month", () => {
-    expect(resolveIntervalSelection(manifest, descriptor)).toEqual({ city: "北京", start: "2021-08", end: "2026-08" });
+    expect(resolveIntervalSelection(manifest, descriptor)).toEqual({ cities: ["北京"], start: "2021-08", end: "2026-08" });
   });
 
   it("retains valid explicit bounds and city", () => {
-    const selection = { city: "广州", start: "2021-08", end: "2025-01" };
+    const selection = { cities: ["广州"], start: "2021-08", end: "2025-01" };
     expect(resolveIntervalSelection(manifest, descriptor, selection)).toEqual(selection);
   });
 
   it("clamps bounds to the selected housing dataset and sanitizes invalid URL values", () => {
     const short = { periods: ["2025-01", "2026-08"] } as DatasetDescriptor;
-    expect(resolveIntervalSelection(manifest, short)).toEqual({ city: "北京", start: "2025-01", end: "2026-08" });
-    expect(resolveIntervalSelection(manifest, short, { city: "不存在", start: "2021-01", end: "2030-01" }))
-      .toEqual({ city: "北京", start: "2025-01", end: "2026-08" });
+    expect(resolveIntervalSelection(manifest, short)).toEqual({ cities: ["北京"], start: "2025-01", end: "2026-08" });
+    expect(resolveIntervalSelection(manifest, short, { cities: ["不存在"], start: "2021-01", end: "2030-01" }))
+      .toEqual({ cities: ["北京"], start: "2025-01", end: "2026-08" });
     expect(resolveIntervalSelection(manifest, descriptor, { start: "2026-13", end: "invalid" }))
-      .toEqual({ city: "北京", start: "2021-08", end: "2026-08" });
+      .toEqual({ cities: ["北京"], start: "2021-08", end: "2026-08" });
     expect(resolveIntervalSelection(manifest, descriptor, { start: "2026-08", end: "2025-01" }))
-      .toEqual({ city: "北京", start: "2025-01", end: "2025-01" });
+      .toEqual({ cities: ["北京"], start: "2025-01", end: "2025-01" });
+  });
+
+  it("deduplicates valid cities, preserves their order and caps comparisons at five", () => {
+    const cities = ["北京", "上海", "广州", "深圳", "杭州", "南京"];
+    const expanded = { ...manifest, cities: cities.map((name) => ({ name, tier: "一线" as const })) };
+    const selection = resolveIntervalSelection(expanded, descriptor, { cities: ["invalid", " 北京 ", "北京", ...cities.slice(1)] });
+    expect(selection.cities).toEqual(cities.slice(0, 5));
+  });
+
+  it("preserves explicitly empty selections and falls back only for invalid nonempty lists", () => {
+    expect(resolveIntervalSelection(manifest, descriptor, { cities: [] }).cities).toEqual([]);
+    expect(resolveIntervalSelection(manifest, descriptor, { cities: ["invalid"] }).cities).toEqual(["北京"]);
+    expect(resolveIntervalSelection(manifest, descriptor, { cities: ["invalid", "广州"] }).cities).toEqual(["广州"]);
+  });
+});
+
+describe("interval missing-data disclosures", () => {
+  it("groups only identical missing periods and excludes complete cities", () => {
+    expect(groupIntervalMissingPeriods([
+      { city: "北京", imputedPeriods: ["2026-01", "2026-02"] },
+      { city: "上海", imputedPeriods: ["2026-01", "2026-02"] },
+      { city: "广州", imputedPeriods: ["2026-01", "2026-03"] },
+      { city: "深圳", imputedPeriods: [] },
+    ])).toEqual([
+      { cities: ["北京", "上海"], periods: ["2026-01", "2026-02"] },
+      { cities: ["广州"], periods: ["2026-01", "2026-03"] },
+    ]);
+    expect(groupIntervalMissingPeriods([])).toEqual([]);
+  });
+});
+
+describe("interval range shortcuts", () => {
+  it.each([["3y", "2023-08", 36], ["5y", "2021-08", 60], ["10y", "2016-08", 120]] as const)(
+    "%s includes the base month and a complete interval of monthly changes",
+    (range, start, months) => {
+      expect(intervalStartForRange("2011-02", "2026-08", range)).toBe(start);
+      expect(completeMonths(start, "2026-08")).toHaveLength(months + 1);
+    },
+  );
+
+  it("anchors to the selected end month, including January and leap-year February", () => {
+    expect(intervalStartForRange("2011-02", "2025-01", "3y")).toBe("2022-01");
+    expect(intervalStartForRange("2011-02", "2024-02", "5y")).toBe("2019-02");
+  });
+
+  it("clamps short histories and the all shortcut to the first available base month", () => {
+    for (const range of ["3y", "5y", "10y", "all"] as const) {
+      expect(intervalStartForRange("2025-01", "2026-08", range)).toBe("2025-01");
+      expect(intervalStartForRange("2026-08", "2026-08", range)).toBe("2026-08");
+    }
+    expect(intervalStartForRange("2011-02", "2026-08", "all")).toBe("2011-02");
   });
 });
 

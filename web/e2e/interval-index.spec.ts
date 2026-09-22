@@ -26,13 +26,14 @@ test("defaults to a five-year rebased MoM index without another data request", a
   await page.goto("/?view=resale-all-mom&period=2026-08");
   const view = page.locator(".interval-index-chart");
   await expect(view.getByRole("heading", { name: "区间指数" })).toBeVisible();
-  await expect(view.getByRole("combobox", { name: "城市", exact: true })).toHaveValue("北京");
+  await expect(view.locator(".city-tag")).toHaveText(["北京"]);
   await expect(view.getByLabel("起始月份")).toHaveValue(start);
   await expect(view.getByLabel("结束月份")).toHaveValue(end);
   await expect(view.getByRole("checkbox")).toHaveCount(0);
   await expect(view.locator(".interval-fill-note")).toHaveCount(0);
-  expect(await view.locator("optgroup").evaluateAll((groups) => groups.map((group) => group.getAttribute("label"))))
-    .toEqual(["一线", "二线", "三线"]);
+  await view.getByRole("button", { name: "选择城市", exact: true }).click();
+  await expect(view.locator(".city-option-group-title")).toHaveText(["一线（4）", "二线（31）", "三线（35）"]);
+  await view.getByLabel("搜索城市").press("Escape");
   const endpoint = await expectedIndex("北京", start, end);
   await expect(view.getByTestId("interval-end-index")).toHaveText(endpoint.toFixed(1));
   await expect(view.getByTestId("interval-change")).toHaveText(`${endpoint - 100 > 0 ? "+" : ""}${(endpoint - 100).toFixed(1)}%`);
@@ -85,11 +86,15 @@ test("preserves city and dates across global metrics, housing filters, collapse 
   const view = page.locator(".interval-index-chart");
   await expect(view.getByRole("checkbox")).toHaveCount(0);
   await expect(page).not.toHaveURL(/indexFill=/);
-  await view.getByRole("combobox", { name: "城市", exact: true }).selectOption("广州");
+  await view.getByRole("button", { name: "移除北京", exact: true }).click();
+  await view.getByRole("button", { name: "选择城市", exact: true }).click();
+  await view.getByLabel("搜索城市").fill("广州");
+  await view.getByRole("button", { name: "广州", exact: true }).click();
+  await view.getByLabel("搜索城市").press("Escape");
   await view.getByLabel("结束月份").selectOption("2025-08");
   const endpoint = await expectedIndex("广州", "2021-08", "2025-08");
   await expect(view.getByTestId("interval-end-index")).toHaveText(endpoint.toFixed(1));
-  await expect(page).toHaveURL(/indexCity=/);
+  await expect(page).toHaveURL(/indexCities=/);
   await expect(page).toHaveURL(/indexStart=2021-08/);
   await expect(page).toHaveURL(/indexEnd=2025-08/);
   await page.reload();
@@ -97,7 +102,7 @@ test("preserves city and dates across global metrics, housing filters, collapse 
   await expect(view.locator(".interval-estimate-marker")).toHaveCount(0);
   await expect(view.getByLabel("起始月份")).toHaveValue("2021-08");
   await expect(view.getByLabel("结束月份")).toHaveValue("2025-08");
-  await expect(view.getByRole("combobox", { name: "城市", exact: true })).toHaveValue("广州");
+  await expect(view.locator(".city-tag")).toHaveText(["广州"]);
   for (const metric of ["同比", "累计平均同比"]) {
     await page.locator(".filter-toggle").click();
     await page.locator(".filter-list").getByRole("combobox", { name: "指标", exact: true }).selectOption({ label: metric });
@@ -117,7 +122,7 @@ test("preserves city and dates across global metrics, housing filters, collapse 
   await trends.locator(".section-toggle").click();
   await expect(view).toHaveCount(0);
   await trends.locator(".section-toggle").click();
-  await expect(view.getByRole("combobox", { name: "城市", exact: true })).toHaveValue("广州");
+  await expect(view.locator(".city-tag")).toHaveText(["广州"]);
   await expect(view.getByLabel("结束月份")).toHaveValue("2025-08");
   await expect(view.getByRole("checkbox")).toHaveCount(0);
 });
@@ -227,7 +232,7 @@ test("handles short intervals, same-month bounds and invalid shared selections",
   const { start, end } = await defaultBounds();
   await page.goto("/?view=resale-all-mom&period=2026-08&indexCity=invalid&indexStart=2026-13&indexEnd=9999-01&indexFill=invalid");
   const view = page.locator(".interval-index-chart");
-  await expect(view.getByRole("combobox", { name: "城市", exact: true })).toHaveValue("北京");
+  await expect(view.locator(".city-tag")).toHaveText(["北京"]);
   await expect(view.getByLabel("起始月份")).toHaveValue(start);
   await expect(view.getByLabel("结束月份")).toHaveValue(end);
   await expect(view.getByRole("checkbox")).toHaveCount(0);
@@ -271,5 +276,245 @@ test("keeps controls, endpoint labels and chart within desktop and mobile widths
     expect(await view.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
     await view.screenshot({ path: `/tmp/house-interval-${width}.png`, scale: "css" });
+  }
+});
+
+test("searches tier-grouped cities, limits the index to five and keeps trend selections independent", async ({ page }, testInfo) => {
+  await page.goto("/?view=resale-all-mom&period=2026-08&indexStart=2021-08&indexEnd=2026-08");
+  const view = page.locator(".interval-index-chart");
+  const trend = page.locator(".city-trend-chart");
+  const picker = view.getByRole("group", { name: "区间指数城市选择" });
+  await expect(trend.locator(".city-tag")).toHaveText(["北京", "上海", "广州", "深圳"]);
+  await picker.getByRole("button", { name: "选择城市", exact: true }).click();
+  const search = picker.getByLabel("搜索城市");
+  await search.fill("没有这座城市");
+  await expect(picker.locator(".city-options-empty")).toHaveText("未找到城市");
+  for (const city of ["上海", "广州", "深圳", "杭州"]) {
+    await search.fill(city);
+    await picker.getByRole("button", { name: city, exact: true }).click();
+    await expect(picker.getByRole("button", { name: city, exact: true })).toHaveAttribute("aria-pressed", "true");
+  }
+  await expect(picker.locator(".city-picker-hint")).toHaveText("最多选择 5 个城市");
+  await search.fill("南京");
+  await expect(picker.getByRole("button", { name: "南京", exact: true })).toBeDisabled();
+  await search.press("Escape");
+  await expect(picker.getByRole("button", { name: "选择城市", exact: true })).toBeFocused();
+  await expect(view.locator(".interval-summary")).toHaveCount(0);
+  await expect(view.locator(".interval-results tbody tr")).toHaveCount(5);
+  for (const city of ["北京", "上海", "广州", "深圳", "杭州"]) {
+    await expect(view.locator(`tr[data-city="${city}"]`).getByTestId("interval-end-index"))
+      .toHaveText((await expectedIndex(city, "2021-08", "2026-08")).toFixed(1));
+  }
+  const colors = await picker.locator(".city-tag .city-color-swatch").evaluateAll((elements) => elements.map((element) => (element as HTMLElement).style.backgroundColor));
+  expect(new Set(colors).size).toBe(5);
+  await picker.getByRole("button", { name: "移除北京", exact: true }).click();
+  await picker.getByRole("button", { name: "选择城市", exact: true }).click();
+  await search.fill("南京");
+  await picker.getByRole("button", { name: "南京", exact: true }).click();
+  await search.press("Escape");
+  expect(await picker.locator(".city-tag .city-color-swatch").evaluateAll((elements) => elements.map((element) => (element as HTMLElement).style.backgroundColor)))
+    .toEqual([...colors.slice(1), colors[0]]);
+  await expect(trend.locator(".city-tag")).toHaveText(["北京", "上海", "广州", "深圳"]);
+  await view.scrollIntoViewIfNeeded();
+  await view.screenshot({ path: `/tmp/house-interval-multi-${testInfo.project.name}.png`, scale: "css" });
+  await page.reload();
+  await expect(picker.locator(".city-tag")).toHaveText(["上海", "广州", "深圳", "杭州", "南京"]);
+  await view.getByLabel("结束月份").selectOption("2025-08");
+  await page.locator(".filter-toggle").click();
+  await page.locator(".filter-list").getByRole("combobox", { name: "指标", exact: true }).selectOption({ label: "同比" });
+  await page.getByRole("button", { name: "完成", exact: true }).click();
+  for (const city of ["上海", "广州", "深圳", "杭州", "南京"]) {
+    await expect(view.locator(`tr[data-city="${city}"]`).getByTestId("interval-end-index"))
+      .toHaveText((await expectedIndex(city, "2021-08", "2025-08")).toFixed(1));
+  }
+});
+
+test("migrates old links, sanitizes multi-city links and preserves an empty city selection", async ({ page }) => {
+  const view = page.locator(".interval-index-chart");
+  await page.goto("/?view=resale-all-mom&period=2026-08&indexCity=广州&indexStart=2021-08&indexEnd=2026-08");
+  await expect(view.locator(".city-tag")).toHaveText(["广州"]);
+  await expect(page).not.toHaveURL(/indexCity=/);
+  await expect(page).toHaveURL(/indexCities=/);
+  await page.reload();
+  await expect(view.locator(".city-tag")).toHaveText(["广州"]);
+  await view.getByRole("button", { name: "移除广州", exact: true }).click();
+  await expect(view.getByRole("status")).toHaveText("请选择至少一个城市");
+  await expect(view.locator(".chart-canvas")).toHaveCount(0);
+  await expect(view.locator(".interval-summary")).toHaveCount(0);
+  await expect(page).toHaveURL((url) => url.searchParams.get("indexCities") === "");
+  await page.reload();
+  await expect(view.getByRole("status")).toHaveText("请选择至少一个城市");
+  await expect(view.locator(".city-tag")).toHaveCount(0);
+  await page.goto("/?view=resale-all-mom&period=2026-08&indexCity=南京&indexCities=不存在,北京,北京,上海,广州,深圳,杭州,南京");
+  await expect(view.locator(".city-tag")).toHaveText(["北京", "上海", "广州", "深圳", "杭州"]);
+  await expect(view.locator(".interval-results tbody tr")).toHaveCount(5);
+  await page.reload();
+  await expect(view.locator(".city-tag")).toHaveText(["北京", "上海", "广州", "深圳", "杭州"]);
+});
+
+test("groups identical gaps by city and deduplicates segmented tooltip rows and legends", async ({ page }, testInfo) => {
+  const manifest = JSON.parse(await readFile("public/data/manifest.json", "utf8")) as Manifest;
+  const shard = await localShard("resale-all-mom");
+  const gaps: Record<string, string[]> = {
+    北京: ["2026-01", "2026-02"], 上海: ["2026-01", "2026-02"], 广州: ["2026-02", "2026-04"], 深圳: [],
+  };
+  const endpoints = new Map<string, number>();
+  for (const [city, periods] of Object.entries(gaps)) {
+    const cityIndex = manifest.cities.findIndex((item) => item.name === city);
+    for (const period of periods) shard.values[shard.periods.indexOf(period)]![cityIndex] = null;
+    endpoints.set(city, shard.periods.reduce((value, period, index) => period > "2025-12" && period <= "2026-08"
+      ? value * (shard.values[index]![cityIndex] ?? 100) / 100 : value, 100));
+  }
+  await page.route("**/data/shards/resale-all-mom.json", (route) => route.fulfill({ json: shard }));
+  await page.goto("/?view=resale-all-mom&period=2026-08&indexCities=北京,上海,广州,深圳&indexStart=2025-12&indexEnd=2026-08");
+  const view = page.locator(".interval-index-chart");
+  await expect(view.locator(".interval-fill-note p")).toHaveText([
+    "* 北京、上海：缺失 2 个月环比数据：2026年1月 至 2026年2月。",
+    "* 广州：缺失 2 个月环比数据：2026年2月、2026年4月。",
+    "已按持平填补，缺失段以虚线表示，后续累计值均含填补假设。",
+  ]);
+  for (const [city, endpoint] of endpoints) {
+    const row = view.locator(`tr[data-city="${city}"]`);
+    await expect(row.getByTestId("interval-end-index")).toHaveText(endpoint.toFixed(1));
+    await expect(row.locator(".interval-estimate-marker")).toHaveCount(city === "深圳" ? 0 : 1);
+  }
+  const chart = view.locator(".chart-canvas");
+  await expect(chart.locator("svg text").filter({ hasText: "含持平填补：3城" })).toBeVisible();
+  const mobile = testInfo.project.name === "mobile";
+  if (mobile) await page.setViewportSize({ width: 320, height: 900 });
+  await chart.scrollIntoViewIfNeeded();
+  const bounds = (await chart.boundingBox())!;
+  const left = mobile ? 42 : 54;
+  const x = bounds.x + left + (bounds.width - left - 20) * 2 / 8;
+  const y = bounds.y + bounds.height / 2;
+  if (mobile) await page.touchscreen.tap(x, y);
+  else await page.mouse.move(x, y);
+  const tooltip = chart.locator(".interval-tooltip");
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip.locator("tbody tr")).toHaveCount(4);
+  await expect(tooltip.locator("tbody th")).toHaveText(["北京*", "上海*", "广州*", "深圳"]);
+  await expect(tooltip.locator("tbody td:last-child")).toHaveText(["缺失", "缺失", "缺失", /%$/]);
+  const tipBox = (await tooltip.boundingBox())!;
+  expect(tipBox.x).toBeGreaterThanOrEqual(0);
+  expect(tipBox.x + tipBox.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  await view.screenshot({ path: `/tmp/house-interval-multi-gaps-${testInfo.project.name}.png`, scale: "css" });
+  const beijingLegend = chart.locator("svg text").filter({ hasText: /^北京\*$/ });
+  if (mobile) await beijingLegend.tap();
+  else await beijingLegend.click();
+  // Hiding the first city must not hide the common 100 baseline or duplicate other cities.
+  await expect(chart.locator('path[stroke="#2563eb"][stroke-width="2.2"]')).toHaveCount(0);
+  await expect(chart.locator('path[stroke="#667085"][stroke-dasharray]')).toHaveCount(1);
+  const updatedBounds = (await chart.boundingBox())!;
+  const updatedX = updatedBounds.x + left + (updatedBounds.width - left - 20) * 2 / 8;
+  const updatedY = updatedBounds.y + updatedBounds.height / 2;
+  if (mobile) await page.touchscreen.tap(updatedX, updatedY);
+  else await page.mouse.move(updatedX, updatedY);
+  await expect(tooltip.locator("tbody th")).toHaveText(["上海*", "广州*", "深圳"]);
+  await view.getByLabel("起始月份").selectOption("2026-08");
+  await expect(view.getByTestId("interval-end-index")).toHaveText(["100.0", "100.0", "100.0", "100.0"]);
+  await expect(view.locator(".interval-fill-note")).toHaveCount(0);
+});
+
+test("fits five-city results and endpoint labels on narrow screens without changing line colors", async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/?view=resale-all-mom&period=2026-08&indexCities=北京,上海,广州,深圳,乌鲁木齐&indexStart=2021-08&indexEnd=2026-08");
+  const view = page.locator(".interval-index-chart");
+  for (const width of testInfo.project.name === "mobile" ? [320, 390, 430] : [768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await expect(view.locator(".interval-results tbody tr")).toHaveCount(5);
+    await view.scrollIntoViewIfNeeded();
+    const labels = view.locator(".chart-canvas svg text");
+    await expect(labels.filter({ hasText: width < 768 ? /^21年8月$/ : /^2021年8月$/ })).toBeVisible();
+    await expect(labels.filter({ hasText: width < 768 ? /^26年8月$/ : /^2026年8月$/ })).toBeVisible();
+    const lineColors = await view.locator('.chart-canvas path[fill="none"][stroke-width="2.2"]').evaluateAll((paths) =>
+      [...new Set(paths.map((path) => path.getAttribute("stroke")))]);
+    expect(lineColors).toEqual(["#2563eb", "#e5484d", "#168b6b", "#7c3aed", "#d97706"]);
+    expect(await view.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+    for (const control of await view.locator(".filter-select, .city-picker-control, .interval-results").all()) {
+      const box = (await control.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+    }
+    await view.screenshot({ path: `/tmp/house-interval-multi-${width}.png`, scale: "css" });
+  }
+  expect(errors).toEqual([]);
+});
+
+test("rebases shortcut ranges on the selected end month and clears highlights for custom dates", async ({ page }) => {
+  const first = (await localShard("resale-all-mom")).periods[0]!;
+  await page.goto("/?view=resale-all-mom&period=2026-08&indexCities=北京,上海&indexStart=2021-08&indexEnd=2026-08");
+  const view = page.locator(".interval-index-chart");
+  const shortcuts = view.getByRole("group", { name: "区间指数快捷区间" });
+  await expect(shortcuts.getByRole("button", { name: "近5年", exact: true })).toHaveAttribute("aria-pressed", "true");
+  for (const [label, start] of [["近3年", "2023-08"], ["近10年", "2016-08"], ["全部", first]]) {
+    await shortcuts.getByRole("button", { name: label, exact: true }).click();
+    await expect(view.getByLabel("起始月份")).toHaveValue(start!);
+    await expect(view.getByLabel("结束月份")).toHaveValue("2026-08");
+    await expect(shortcuts.getByRole("button", { pressed: true })).toHaveText(label!);
+    await expect(view.locator(".city-tag")).toHaveText(["北京", "上海"]);
+  }
+  await view.getByLabel("起始月份").selectOption("2022-07");
+  await expect(shortcuts.getByRole("button", { pressed: true })).toHaveCount(0);
+  await view.getByLabel("结束月份").selectOption("2025-08");
+  await expect(view.getByLabel("起始月份")).toHaveValue("2022-07");
+  await shortcuts.getByRole("button", { name: "近3年", exact: true }).click();
+  await expect(view.getByLabel("起始月份")).toHaveValue("2022-08");
+  await expect(view.getByLabel("结束月份")).toHaveValue("2025-08");
+  for (const city of ["北京", "上海"]) {
+    await expect(view.locator(`tr[data-city="${city}"]`).getByTestId("interval-end-index"))
+      .toHaveText((await expectedIndex(city, "2022-08", "2025-08")).toFixed(1));
+  }
+  await page.reload();
+  await expect(shortcuts.getByRole("button", { pressed: true })).toHaveText("近3年");
+  await expect(view.getByLabel("起始月份")).toHaveValue("2022-08");
+  await expect(view.getByLabel("结束月份")).toHaveValue("2025-08");
+  await expect(view.locator(".city-tag")).toHaveText(["北京", "上海"]);
+  await expect(page.locator(".city-trend-chart").getByRole("button", { name: "近5年", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await view.getByLabel("起始月份").selectOption(first);
+  await view.getByLabel("结束月份").selectOption(first);
+  for (const label of ["近3年", "近5年", "近10年", "全部"]) {
+    await shortcuts.getByRole("button", { name: label, exact: true }).click();
+    await expect(view.getByLabel("起始月份")).toHaveValue(first);
+    await expect(view.getByLabel("结束月份")).toHaveValue(first);
+    await expect(shortcuts.getByRole("button", { pressed: true })).toHaveText("全部");
+    await expect(view.getByTestId("interval-end-index")).toHaveText(["100.0", "100.0"]);
+  }
+});
+
+test("aligns shortcuts beside dates on desktop and in a full-width row on mobile", async ({ page }, testInfo) => {
+  await page.goto("/?view=resale-all-mom&period=2026-08&indexStart=2021-08&indexEnd=2026-08");
+  const view = page.locator(".interval-index-chart");
+  const shortcuts = view.getByRole("group", { name: "区间指数快捷区间" });
+  // Keep fixed page chrome out of the component screenshots.
+  await page.addStyleTag({ content: ".app-header, .scroll-jump { visibility: hidden !important; }" });
+  for (const width of testInfo.project.name === "mobile" ? [320, 390, 430] : [768, 900, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 1100 });
+    await expect(view.locator(".chart-canvas svg")).toBeVisible();
+    await view.scrollIntoViewIfNeeded();
+    const dates = (await view.locator(".interval-controls").boundingBox())!;
+    const quick = (await shortcuts.boundingBox())!;
+    const buttonBoxes = await shortcuts.getByRole("button").evaluateAll((elements) => elements.map((element) => {
+      const rect = element.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, top: rect.top, width: rect.width };
+    }));
+    if (width < 768) {
+      expect(quick.y).toBeGreaterThanOrEqual(dates.y + dates.height);
+      expect(Math.abs(quick.x - dates.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(quick.width - dates.width)).toBeLessThanOrEqual(1);
+      expect(Math.max(...buttonBoxes.map((box) => box.width)) - Math.min(...buttonBoxes.map((box) => box.width))).toBeLessThanOrEqual(1);
+    } else {
+      expect(quick.x).toBeGreaterThanOrEqual(dates.x + dates.width);
+      expect(Math.abs(quick.y + quick.height - dates.y - dates.height)).toBeLessThanOrEqual(1);
+    }
+    for (let index = 0; index < buttonBoxes.length; index++) {
+      const box = buttonBoxes[index]!;
+      expect(box.left).toBeGreaterThanOrEqual(0);
+      expect(box.right).toBeLessThanOrEqual(width);
+      if (index) expect(box.left).toBeGreaterThanOrEqual(buttonBoxes[index - 1]!.right);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+    await view.screenshot({ path: `/tmp/house-interval-shortcuts-${width}.png`, scale: "css" });
   }
 });

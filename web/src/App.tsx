@@ -72,7 +72,8 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
   const [intervalSelection, setIntervalSelection] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     return resolveIntervalSelection(manifest, intervalDescriptor, {
-      city: params.get("indexCity") ?? undefined,
+      cities: params.has("indexCities") ? (params.get("indexCities") || "").split(",").filter(Boolean)
+        : params.has("indexCity") ? [params.get("indexCity")!] : undefined,
       start: params.get("indexStart") ?? undefined,
       end: params.get("indexEnd") ?? undefined,
     });
@@ -109,10 +110,10 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
     else params.set("cityRange", cityRange);
     if (selectedCities.join(",") === DEFAULT_CITIES.join(",")) params.delete("cities");
     else params.set("cities", selectedCities.join(","));
-    const defaultIndex = effectiveInterval.city === defaultInterval.city
+    const defaultIndex = effectiveInterval.cities.join(",") === defaultInterval.cities.join(",")
       && effectiveInterval.start === defaultInterval.start && effectiveInterval.end === defaultInterval.end;
     for (const [key, value] of [
-      ["indexCity", effectiveInterval.city],
+      ["indexCities", effectiveInterval.cities.join(",")],
       ["indexStart", effectiveInterval.start],
       ["indexEnd", effectiveInterval.end],
     ] as const) {
@@ -120,6 +121,7 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
       else params.set(key, value);
     }
     params.delete("indexFill");
+    params.delete("indexCity");
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
   }, [cityRange, defaultInterval, descriptor.id, effectiveInterval, overallRange, period, selectedCities, trendMode]);
 

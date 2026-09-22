@@ -1,8 +1,8 @@
-import type { DatasetDescriptor, DatasetShard, Manifest } from "../types";
+import type { DatasetDescriptor, DatasetShard, Manifest, TrendRange } from "../types";
 import { completeMonths } from "./format";
 
 export interface IntervalSelection {
-  city: string;
+  cities: string[];
   start: string;
   end: string;
 }
@@ -16,6 +16,15 @@ export interface IntervalPoint {
 }
 
 const PERIOD_PATTERN = /^[1-9]\d{3}-(?:0[1-9]|1[0-2])$/;
+export const MAX_INTERVAL_CITIES = 5;
+
+export function intervalStartForRange(first: string, end: string, range: TrendRange): string {
+  if (range === "all") return first;
+  const years = { "3y": 3, "5y": 5, "10y": 10 }[range];
+  // Include the base month so a three-year interval contains 36 compounded monthly changes.
+  const start = `${Number(end.slice(0, 4)) - years}${end.slice(4)}`;
+  return start < first ? first : start;
+}
 
 export function resolveIntervalSelection(
   manifest: Manifest,
@@ -26,12 +35,14 @@ export function resolveIntervalSelection(
   const last = descriptor.periods.at(-1) ?? manifest.periodRange[1];
   const clamp = (period: string) => period < first ? first : period > last ? last : period;
   const end = requested.end && PERIOD_PATTERN.test(requested.end) ? clamp(requested.end) : last;
-  const fiveYearsEarlier = `${Number(end.slice(0, 4)) - 5}${end.slice(4)}`;
-  const start = clamp(requested.start && PERIOD_PATTERN.test(requested.start) ? requested.start : fiveYearsEarlier);
-  const city = manifest.cities.find((item) => item.name === requested.city)?.name
-    ?? manifest.cities.find((item) => item.name === "北京")?.name
-    ?? manifest.cities[0]!.name;
-  return { city, start: start > end ? end : start, end };
+  const start = clamp(requested.start && PERIOD_PATTERN.test(requested.start)
+    ? requested.start : intervalStartForRange(first, end, "5y"));
+  const availableCities = new Set(manifest.cities.map((city) => city.name));
+  const fallback = [availableCities.has("北京") ? "北京" : manifest.cities[0]!.name];
+  const requestedCities = requested.cities?.map((city) => city.trim());
+  const validCities = [...new Set(requestedCities)].filter((city) => availableCities.has(city)).slice(0, MAX_INTERVAL_CITIES);
+  const cities = requestedCities?.length === 0 ? [] : validCities.length ? validCities : fallback;
+  return { cities, start: start > end ? end : start, end };
 }
 
 export function buildIntervalIndex(shard: DatasetShard, cityIndex: number, start: string, end: string, fillMissing = false) {
@@ -78,4 +89,16 @@ export function intervalLineSegments(points: IntervalPoint[]) {
     segment.data[index] = point.index;
   }
   return segments;
+}
+
+export function groupIntervalMissingPeriods(results: { city: string; imputedPeriods: string[] }[]) {
+  const groups = new Map<string, { cities: string[]; periods: string[] }>();
+  for (const result of results) {
+    if (!result.imputedPeriods.length) continue;
+    const key = result.imputedPeriods.join(",");
+    const group = groups.get(key);
+    if (group) group.cities.push(result.city);
+    else groups.set(key, { cities: [result.city], periods: result.imputedPeriods });
+  }
+  return [...groups.values()];
 }
