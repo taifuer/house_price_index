@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { RotateCcw, X } from "lucide-react";
 
-import type { DatasetDescriptor, Manifest } from "../types";
+import type { DashboardSection, DatasetDescriptor, Manifest } from "../types";
 import { formatMetric, formatPeriod, formatSizeBand } from "../lib/format";
 import { FilterSelect } from "./FilterSelect";
 
@@ -17,6 +17,8 @@ interface FilterDrawerProps {
   dataset: DatasetDescriptor;
   selection: FilterSelection;
   open: boolean;
+  showPeriod: boolean;
+  section: DashboardSection;
   onClose: () => void;
   onReset: () => void;
   onSelectionChange: (next: Partial<FilterSelection>) => void;
@@ -27,12 +29,13 @@ export function FilterDrawer({
   dataset,
   selection,
   open,
+  showPeriod,
+  section,
   onClose,
   onReset,
   onSelectionChange,
 }: FilterDrawerProps) {
   const drawerRef = useRef<HTMLElement>(null);
-  const firstControlRef = useRef<HTMLSelectElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
@@ -47,7 +50,9 @@ export function FilterDrawer({
     if (!open) return undefined;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    firstControlRef.current?.focus();
+    const focusFrame = requestAnimationFrame(() => {
+      drawerRef.current?.querySelector("select")?.focus({ preventScroll: true });
+    });
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         requestClose();
@@ -70,6 +75,7 @@ export function FilterDrawer({
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => {
+      cancelAnimationFrame(focusFrame);
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", closeOnEscape);
     };
@@ -95,7 +101,7 @@ export function FilterDrawer({
         inert={!open}
       >
         <div className="filter-drawer-heading">
-          <h2 id="filter-drawer-title">筛选条件</h2>
+          <h2 id="filter-drawer-title">{section === "overview" ? "月度概览" : section === "history" ? "历史趋势" : "城市看板"}筛选</h2>
           <button type="button" className="icon-button" onClick={requestClose} title="关闭筛选" aria-label="关闭筛选">
             <X size={20} />
           </button>
@@ -103,10 +109,9 @@ export function FilterDrawer({
 
         <div className="filter-drawer-body">
           <div className="filter-list">
-            <label>
+            {showPeriod && <label>
               <span>月份</span>
               <FilterSelect
-                ref={firstControlRef}
                 value={selection.period}
                 onChange={(event) => onSelectionChange({ period: event.target.value })}
               >
@@ -120,8 +125,8 @@ export function FilterDrawer({
                   );
                 })}
               </FilterSelect>
-            </label>
-            <label>
+            </label>}
+            {section !== "cities" && <label>
               <span>住宅类型</span>
               <FilterSelect
                 value={selection.houseType}
@@ -131,7 +136,7 @@ export function FilterDrawer({
                   <option key={value} value={value}>{value}</option>
                 ))}
               </FilterSelect>
-            </label>
+            </label>}
             <label>
               <span>面积段</span>
               <FilterSelect
@@ -143,7 +148,7 @@ export function FilterDrawer({
                 ))}
               </FilterSelect>
             </label>
-            <label>
+            {section !== "cities" && <label>
               <span>指标</span>
               <FilterSelect
                 value={selection.metric}
@@ -153,7 +158,7 @@ export function FilterDrawer({
                   <option key={value} value={value}>{formatMetric(value)}</option>
                 ))}
               </FilterSelect>
-            </label>
+            </label>}
           </div>
 
           <div className="filter-details">

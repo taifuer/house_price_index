@@ -1,89 +1,42 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useState } from "react";
 
 import { AppHeader } from "./components/AppHeader";
+import { CitySearch } from "./components/CitySearch";
 import { FilterDrawer } from "./components/FilterDrawer";
 import type { FilterSelection } from "./components/FilterDrawer";
 import { ScrollJump } from "./components/ScrollJump";
-import type { DataView } from "./components/DataViewToggle";
 import { datasetForSelection, loadManifest, loadShard } from "./lib/data";
-import { resolveIntervalSelection } from "./lib/intervalIndex";
-import type { DatasetDescriptor, DatasetShard, Manifest, TrendMode, TrendRange } from "./types";
+import { citySnapshotPeriods, dashboardSearch, readDashboardState, type DashboardState } from "./lib/dashboardState";
+import type { DashboardSection, DatasetShard, Manifest } from "./types";
 
 const DashboardContent = lazy(() => import("./components/DashboardContent"));
+const CityContent = lazy(() => import("./components/CityContent"));
 const CURRENT_YEAR = new Date().getFullYear();
-const DEFAULT_CITIES = ["北京", "上海", "广州", "深圳"];
-
-function initialTrendRange(name: string, fallback: TrendRange): TrendRange {
-  const value = new URLSearchParams(window.location.search).get(name);
-  return value === "all" || value === "3y" || value === "5y" || value === "10y" ? value : fallback;
-}
-
-function initialTrendMode(): TrendMode {
-  const value = new URLSearchParams(window.location.search).get("trend");
-  return value === "tier" || value === "breadth" ? value : "overall";
-}
-
-function initialCities(manifest: Manifest): string[] {
-  const params = new URLSearchParams(window.location.search);
-  if (!params.has("cities")) return DEFAULT_CITIES;
-  const requested = params.get("cities") ?? "";
-  const cityNames = new Set(manifest.cities.map((city) => city.name));
-  const selected = [...new Set(requested.split(","))].filter((city) => cityNames.has(city)).slice(0, 10);
-  return selected;
-}
 
 interface LoadedShard {
   id: string;
   data: DatasetShard;
 }
 
-function initialDataset(manifest: Manifest): DatasetDescriptor {
-  const requested = new URLSearchParams(window.location.search).get("view");
-  return manifest.datasets.find((dataset) => dataset.id === requested)
-    ?? manifest.datasets.find((dataset) => dataset.id === manifest.defaultDataset)
-    ?? manifest.datasets[0]!;
-}
-
 function Dashboard({ manifest }: { manifest: Manifest }) {
-  const firstDataset = useMemo(() => initialDataset(manifest), [manifest]);
+  const [state, setState] = useState(() => readDashboardState(manifest, window.location.search));
+  const { section, datasetId, period, trendMode, overallRange } = state;
+  const updateState = (next: Partial<DashboardState>) => setState((current) => ({ ...current, ...next }));
   const defaultDataset = useMemo(
     () => manifest.datasets.find((dataset) => dataset.id === manifest.defaultDataset) ?? manifest.datasets[0]!,
     [manifest],
   );
-  const [datasetId, setDatasetId] = useState(firstDataset.id);
-  const descriptor = manifest.datasets.find((dataset) => dataset.id === datasetId) ?? firstDataset;
-  const requestedPeriod = new URLSearchParams(window.location.search).get("period");
-  const [period, setPeriod] = useState(
-    requestedPeriod && descriptor.periods.includes(requestedPeriod)
-      ? requestedPeriod
-      : descriptor.periods.at(-1)!,
-  );
+  const descriptor = manifest.datasets.find((dataset) => dataset.id === datasetId) ?? defaultDataset;
+  const cityDescriptor = manifest.datasets.find((dataset) => dataset.id === state.cityDatasetId) ?? defaultDataset;
+  const filterDescriptor = section === "cities" ? cityDescriptor : descriptor;
   const [loadedShard, setLoadedShard] = useState<LoadedShard | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [selectedCities, setSelectedCities] = useState(() => initialCities(manifest));
-  const [trendMode, setTrendMode] = useState<TrendMode>(initialTrendMode);
-  const [overallRange, setOverallRange] = useState<TrendRange>(() => initialTrendRange("range", "10y"));
-  const [cityRange, setCityRange] = useState<TrendRange>(() => initialTrendRange("cityRange", "5y"));
-  const [rankingView, setRankingView] = useState<DataView>("chart");
-  const [cityView, setCityView] = useState<DataView>("chart");
-  const intervalDescriptor = datasetForSelection(manifest, descriptor.houseType, descriptor.sizeBand, "环比") ?? descriptor;
-  const defaultInterval = useMemo(() => resolveIntervalSelection(manifest, intervalDescriptor), [manifest, intervalDescriptor]);
-  const [intervalSelection, setIntervalSelection] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return resolveIntervalSelection(manifest, intervalDescriptor, {
-      cities: params.has("indexCities") ? (params.get("indexCities") || "").split(",").filter(Boolean)
-        : params.has("indexCity") ? [params.get("indexCity")!] : undefined,
-      start: params.get("indexStart") ?? undefined,
-      end: params.get("indexEnd") ?? undefined,
-    });
-  });
-  const effectiveInterval = useMemo(
-    () => resolveIntervalSelection(manifest, intervalDescriptor, intervalSelection),
-    [manifest, intervalDescriptor, intervalSelection],
-  );
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [focusCityRequest, setFocusCityRequest] = useState(0);
 
   useEffect(() => {
+    if (section === "cities") return;
     let active = true;
     setLoadError(null);
     loadShard(descriptor)
@@ -96,74 +49,102 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
     return () => {
       active = false;
     };
-  }, [descriptor]);
+  }, [descriptor, section]);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    params.set("view", descriptor.id);
-    params.set("period", period);
-    if (trendMode === "overall") params.delete("trend");
-    else params.set("trend", trendMode);
-    if (overallRange === "10y") params.delete("range");
-    else params.set("range", overallRange);
-    if (cityRange === "5y") params.delete("cityRange");
-    else params.set("cityRange", cityRange);
-    if (selectedCities.join(",") === DEFAULT_CITIES.join(",")) params.delete("cities");
-    else params.set("cities", selectedCities.join(","));
-    const defaultIndex = effectiveInterval.cities.join(",") === defaultInterval.cities.join(",")
-      && effectiveInterval.start === defaultInterval.start && effectiveInterval.end === defaultInterval.end;
-    for (const [key, value] of [
-      ["indexCities", effectiveInterval.cities.join(",")],
-      ["indexStart", effectiveInterval.start],
-      ["indexEnd", effectiveInterval.end],
-    ] as const) {
-      if (defaultIndex) params.delete(key);
-      else params.set(key, value);
+    window.history.replaceState(null, "", `${window.location.pathname}${dashboardSearch(manifest, state, window.location.search)}${window.location.hash}`);
+  }, [manifest, state]);
+
+  useEffect(() => {
+    const restore = () => {
+      setState(readDashboardState(manifest, window.location.search));
+      setFilterOpen(false);
+      setSearchOpen(false);
+    };
+    window.addEventListener("popstate", restore);
+    const previous = window.history.scrollRestoration;
+    window.history.scrollRestoration = "manual";
+    return () => {
+      window.removeEventListener("popstate", restore);
+      window.history.scrollRestoration = previous;
+    };
+  }, [manifest]);
+
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [section, state.city]);
+
+  const sectionHref = (next: DashboardSection) => `${window.location.pathname}${dashboardSearch(manifest, { ...state, section: next }, window.location.search)}`;
+  const navigate = (nextSection: DashboardSection, changes: Partial<DashboardState> = {}) => {
+    const next = { ...state, ...changes, section: nextSection };
+    if (nextSection !== section || (nextSection === "cities" && next.city !== state.city)) {
+      window.history.pushState(null, "", `${window.location.pathname}${dashboardSearch(manifest, next, window.location.search)}`);
     }
-    params.delete("indexFill");
-    params.delete("indexCity");
-    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
-  }, [cityRange, defaultInterval, descriptor.id, effectiveInterval, overallRange, period, selectedCities, trendMode]);
+    setState(next);
+  };
 
   const selection: FilterSelection = {
-    period,
-    houseType: descriptor.houseType,
-    sizeBand: descriptor.sizeBand,
-    metric: descriptor.metric,
+    period: section === "cities" ? state.cityPeriod : period,
+    houseType: filterDescriptor.houseType,
+    sizeBand: filterDescriptor.sizeBand,
+    metric: filterDescriptor.metric,
   };
 
   const updateSelection = (next: Partial<FilterSelection>) => {
-    if (next.period) setPeriod(next.period);
+    if (section === "cities") {
+      const sizeBand = next.sizeBand ?? cityDescriptor.sizeBand;
+      const target = datasetForSelection(manifest, cityDescriptor.houseType, sizeBand, cityDescriptor.metric);
+      const periods = citySnapshotPeriods(manifest, sizeBand);
+      const candidate = next.period ?? state.cityPeriod;
+      if (target) updateState({ cityDatasetId: target.id, cityPeriod: periods.includes(candidate) ? candidate : periods.at(-1)! });
+      return;
+    }
     const nextHouseType = next.houseType ?? descriptor.houseType;
     const nextSizeBand = next.sizeBand ?? descriptor.sizeBand;
     const nextMetric = next.metric ?? descriptor.metric;
     const target = datasetForSelection(manifest, nextHouseType, nextSizeBand, nextMetric);
-    if (!target || target.id === descriptor.id) return;
-    setDatasetId(target.id);
-    if (!target.periods.includes(next.period ?? period)) setPeriod(target.periods.at(-1)!);
+    if (!target) return;
+    const nextPeriod = next.period ?? period;
+    updateState({ datasetId: target.id, period: target.periods.includes(nextPeriod) ? nextPeriod : target.periods.at(-1)! });
   };
 
   const defaultPeriod = defaultDataset.periods.at(-1)!;
-  const activeFilterCount = [
-    period !== defaultPeriod,
+  const activeFilterCount = (section === "cities" ? [
+    cityDescriptor.sizeBand !== defaultDataset.sizeBand,
+  ] : [
+    section === "overview" && period !== defaultPeriod,
     descriptor.houseType !== defaultDataset.houseType,
     descriptor.sizeBand !== defaultDataset.sizeBand,
     descriptor.metric !== defaultDataset.metric,
-  ].filter(Boolean).length;
+  ]).filter(Boolean).length;
   const resetFilters = () => {
-    setDatasetId(defaultDataset.id);
-    setPeriod(defaultPeriod);
+    if (section === "cities") {
+      const target = datasetForSelection(manifest, cityDescriptor.houseType, defaultDataset.sizeBand, cityDescriptor.metric)!;
+      const periods = citySnapshotPeriods(manifest, target.sizeBand);
+      updateState({ cityDatasetId: target.id, cityPeriod: periods.includes(state.cityPeriod) ? state.cityPeriod : periods.at(-1)! });
+      return;
+    }
+    updateState({ datasetId: defaultDataset.id, period: section === "overview" || !defaultDataset.periods.includes(period) ? defaultPeriod : period });
   };
 
   const shard = loadedShard?.id === descriptor.id ? loadedShard.data : null;
+  const openCity = (city: string, context: Partial<DashboardState> = {}) => {
+    setSearchOpen(false);
+    navigate("cities", { ...context, city, selectedCities: [city], intervalSelection: { ...state.intervalSelection, cities: [city] } });
+    setFocusCityRequest((value) => value + 1);
+  };
+  const openSearch = () => { setFilterOpen(false); setSearchOpen(true); };
 
   return (
     <div className="app-shell">
+      <CitySearch cities={manifest.cities} open={searchOpen} onClose={() => setSearchOpen(false)} onSelect={openCity} />
       <FilterDrawer
         manifest={manifest}
-        dataset={descriptor}
+        dataset={filterDescriptor}
         selection={selection}
         open={filterOpen}
+        showPeriod={section === "overview"}
+        section={section}
         onClose={() => setFilterOpen(false)}
         onReset={resetFilters}
         onSelectionChange={updateSelection}
@@ -173,35 +154,45 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
         filterOpen={filterOpen}
         activeFilterCount={activeFilterCount}
         onToggleFilter={() => setFilterOpen((value) => !value)}
+        section={section}
+        sectionHref={sectionHref}
+        onSectionChange={navigate}
+        searchOpen={searchOpen}
+        onOpenSearch={openSearch}
       />
 
       <main className="app-main">
-        {loadError && <div className="data-error" role="alert">{loadError}</div>}
-        {!shard && !loadError && <div className="content-loader"><span /><span /><span /></div>}
-        {shard && (
+        {section === "cities" ? (
+          <Suspense fallback={<div className="content-loader"><span /><span /><span /></div>}>
+            <CityContent manifest={manifest} state={state} onChange={updateState} onOpenSearch={openSearch}
+              focusRequest={focusCityRequest} />
+          </Suspense>
+        ) : <>
+          {loadError && <div className="data-error" role="alert">{loadError}</div>}
+          {!shard && !loadError && <div className="content-loader"><span /><span /><span /></div>}
+          {shard && (
           <Suspense fallback={<div className="content-loader"><span /><span /><span /></div>}>
             <DashboardContent
               manifest={manifest}
               descriptor={descriptor}
               shard={shard}
               period={period}
-              rankingView={rankingView}
-              onRankingViewChange={setRankingView}
-              cityView={cityView}
-              onCityViewChange={setCityView}
-              selectedCities={selectedCities}
-              onSelectedCitiesChange={setSelectedCities}
+              section={section}
+              onViewCity={(city) => openCity(city, { cityDatasetId: descriptor.id, cityPeriod: period })}
+              overviewTier={state.overviewTier}
+              onOverviewTierChange={(overviewTier) => updateState({ overviewTier })}
+              heatmapRange={state.heatmapRange}
+              onHeatmapRangeChange={(heatmapRange) => updateState({ heatmapRange })}
+              heatmapTier={state.heatmapTier}
+              onHeatmapTierChange={(heatmapTier) => updateState({ heatmapTier })}
               trendMode={trendMode}
-              onTrendModeChange={setTrendMode}
+              onTrendModeChange={(trendMode) => updateState({ trendMode })}
               overallRange={overallRange}
-              onOverallRangeChange={setOverallRange}
-              cityRange={cityRange}
-              onCityRangeChange={setCityRange}
-              intervalSelection={effectiveInterval}
-              onIntervalSelectionChange={setIntervalSelection}
+              onOverallRangeChange={(overallRange) => updateState({ overallRange })}
             />
           </Suspense>
-        )}
+          )}
+        </>}
       </main>
       <ScrollJump />
       <footer id="app-footer" className="app-footer">
@@ -209,9 +200,11 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
           © {CURRENT_YEAR}{" "}
           <a href="https://github.com/taifuer/house_price_index" target="_blank" rel="noreferrer">House Price Index</a>
         </span>
+        <span className="footer-separator" aria-hidden="true">·</span>
         <span className="footer-source">
-          {" · 数据来源于 "}
+          {"数据来源于 "}
           <a href="https://www.stats.gov.cn/" target="_blank" rel="noreferrer">国家统计局</a>
+          ，以官方发布为准
         </span>
       </footer>
     </div>

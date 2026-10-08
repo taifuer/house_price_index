@@ -23,7 +23,7 @@ test("defaults to a five-year rebased MoM index without another data request", a
   const { start, end } = await defaultBounds();
   const requests: string[] = [];
   page.on("request", (request) => { if (request.url().includes("/data/shards/resale-all-mom.json")) requests.push(request.url()); });
-  await page.goto("/?view=resale-all-mom&period=2026-08");
+  await page.goto("/?section=cities&view=resale-all-mom&period=2026-08");
   const view = page.locator(".interval-index-chart");
   await expect(view.getByRole("heading", { name: "区间指数" })).toBeVisible();
   await expect(view.locator(".city-tag")).toHaveText(["北京"]);
@@ -47,7 +47,7 @@ test("defaults to a five-year rebased MoM index without another data request", a
 });
 
 test("shows dashed crosshairs on hover or tap without adding overlapping axis labels", async ({ page }, testInfo) => {
-  await page.goto("/?view=resale-all-mom&period=2026-08");
+  await page.goto("/?section=cities&view=resale-all-mom&period=2026-08");
   const view = page.locator(".interval-index-chart");
   const chart = view.locator(".chart-canvas");
   await expect(chart.locator("svg")).toBeVisible();
@@ -81,8 +81,8 @@ test("shows dashed crosshairs on hover or tap without adding overlapping axis la
   }
 });
 
-test("preserves city and dates across global metrics, housing filters, collapse and reload", async ({ page }) => {
-  await page.goto("/?view=resale-all-mom&period=2026-08&indexStart=2021-08&indexEnd=2026-08&indexFill=flat");
+test("preserves city and dates across global metrics, housing filters, navigation and reload", async ({ page }) => {
+  await page.goto("/?section=cities&view=resale-all-mom&period=2026-08&indexStart=2021-08&indexEnd=2026-08&indexFill=flat");
   const view = page.locator(".interval-index-chart");
   await expect(view.getByRole("checkbox")).toHaveCount(0);
   await expect(page).not.toHaveURL(/indexFill=/);
@@ -104,24 +104,21 @@ test("preserves city and dates across global metrics, housing filters, collapse 
   await expect(view.getByLabel("结束月份")).toHaveValue("2025-08");
   await expect(view.locator(".city-tag")).toHaveText(["广州"]);
   for (const metric of ["同比", "累计平均同比"]) {
-    await page.locator(".filter-toggle").click();
-    await page.locator(".filter-list").getByRole("combobox", { name: "指标", exact: true }).selectOption({ label: metric });
-    await page.getByRole("button", { name: "完成", exact: true }).click();
+    await page.getByRole("combobox", { name: "走势指标", exact: true }).selectOption({ label: metric });
     await expect(view.getByTestId("interval-end-index")).toHaveText(endpoint.toFixed(1));
     await expect(view.locator(".interval-meta")).toContainText("环比连乘");
     await expect(view.getByRole("checkbox")).toHaveCount(0);
   }
+  await page.getByRole("combobox", { name: "区间指数住宅类型", exact: true }).selectOption({ label: "新建商品住宅" });
   await page.locator(".filter-toggle").click();
-  await page.locator(".filter-list").getByRole("combobox", { name: "住宅类型", exact: true }).selectOption({ label: "新建商品住宅" });
   await page.locator(".filter-list").getByRole("combobox", { name: "面积段", exact: true }).selectOption({ index: 1 });
   await page.getByRole("button", { name: "完成", exact: true }).click();
   await expect(view.locator(".interval-meta")).toContainText("新建商品住宅");
   await expect(view.locator(".interval-meta")).toContainText("90m²及以下");
   await expect(view.getByTestId("interval-end-index")).toHaveText((await expectedIndex("广州", "2021-08", "2025-08", "new-under-90-mom")).toFixed(1));
-  const trends = page.locator(".collapsible-section").nth(1);
-  await trends.locator(".section-toggle").click();
+  await page.getByRole("navigation").getByRole("link", { name: "月度概览" }).click();
   await expect(view).toHaveCount(0);
-  await trends.locator(".section-toggle").click();
+  await page.getByRole("navigation").getByRole("link", { name: "城市看板" }).click();
   await expect(view.locator(".city-tag")).toHaveText(["广州"]);
   await expect(view.getByLabel("结束月份")).toHaveValue("2025-08");
   await expect(view.getByRole("checkbox")).toHaveCount(0);
@@ -137,7 +134,7 @@ test("automatically fills gaps and lists every missing range with no mode contro
   const endpoint = shard.periods.reduce((value, period, index) => period > "2025-12" && period <= "2026-08"
     ? value * (shard.values[index]![cityIndex] ?? 100) / 100 : value, 100);
   await page.route("**/data/shards/resale-all-mom.json", (route) => route.fulfill({ json: shard }));
-  await page.goto("/?view=resale-all-mom&period=2026-08&indexStart=2025-12&indexEnd=2026-08");
+  await page.goto("/?section=cities&view=resale-all-mom&period=2026-08&indexStart=2025-12&indexEnd=2026-08");
   const view = page.locator(".interval-index-chart");
   await expect(view.getByRole("checkbox")).toHaveCount(0);
   await expect(page).not.toHaveURL(/indexFill=/);
@@ -201,7 +198,7 @@ test("fills absent calendar months and ignores obsolete strict-mode links", asyn
   shard.values.splice(missingIndex, 1);
   shard.sources.splice(missingIndex, 1);
   await page.route("**/data/shards/resale-all-mom.json", (route) => route.fulfill({ json: shard }));
-  await page.goto("/?view=resale-all-mom&period=2026-08&indexStart=2021-08&indexEnd=2026-08&indexFill=strict");
+  await page.goto("/?section=cities&view=resale-all-mom&period=2026-08&indexStart=2021-08&indexEnd=2026-08&indexFill=strict");
   const view = page.locator(".interval-index-chart");
   await expect(view.getByRole("checkbox")).toHaveCount(0);
   await expect(page).not.toHaveURL(/indexFill=/);
@@ -221,7 +218,7 @@ test("fills absent calendar months and ignores obsolete strict-mode links", asyn
 
 test("shows a load failure instead of using the selected YoY data", async ({ page }) => {
   await page.route("**/data/shards/resale-all-mom.json", (route) => route.fulfill({ status: 503, body: "unavailable" }));
-  await page.goto("/?view=resale-all-yoy&period=2026-08");
+  await page.goto("/?section=cities&view=resale-all-yoy&period=2026-08");
   const view = page.locator(".interval-index-chart");
   await expect(view.getByRole("alert")).toContainText("503");
   await expect(view.getByTestId("interval-end-index")).toHaveText("--");
@@ -230,7 +227,7 @@ test("shows a load failure instead of using the selected YoY data", async ({ pag
 
 test("handles short intervals, same-month bounds and invalid shared selections", async ({ page }) => {
   const { start, end } = await defaultBounds();
-  await page.goto("/?view=resale-all-mom&period=2026-08&indexCity=invalid&indexStart=2026-13&indexEnd=9999-01&indexFill=invalid");
+  await page.goto("/?section=cities&view=resale-all-mom&period=2026-08&indexCity=invalid&indexStart=2026-13&indexEnd=9999-01&indexFill=invalid");
   const view = page.locator(".interval-index-chart");
   await expect(view.locator(".city-tag")).toHaveText(["北京"]);
   await expect(view.getByLabel("起始月份")).toHaveValue(start);
@@ -248,7 +245,7 @@ test("handles short intervals, same-month bounds and invalid shared selections",
 });
 
 test("keeps controls, endpoint labels and chart within desktop and mobile widths", async ({ page }, testInfo) => {
-  await page.goto("/?view=resale-all-mom&period=2026-08&indexCity=乌鲁木齐&indexStart=2021-08&indexEnd=2026-08");
+  await page.goto("/?section=cities&view=resale-all-mom&period=2026-08&indexCity=乌鲁木齐&indexStart=2021-08&indexEnd=2026-08");
   const view = page.locator(".interval-index-chart");
   for (const width of testInfo.project.name === "mobile" ? [320, 360, 390, 430] : [768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
@@ -280,11 +277,11 @@ test("keeps controls, endpoint labels and chart within desktop and mobile widths
 });
 
 test("searches tier-grouped cities, limits the index to five and keeps trend selections independent", async ({ page }, testInfo) => {
-  await page.goto("/?view=resale-all-mom&period=2026-08&indexStart=2021-08&indexEnd=2026-08");
+  await page.goto("/?section=cities&view=resale-all-mom&period=2026-08&indexStart=2021-08&indexEnd=2026-08");
   const view = page.locator(".interval-index-chart");
   const trend = page.locator(".city-trend-chart");
   const picker = view.getByRole("group", { name: "区间指数城市选择" });
-  await expect(trend.locator(".city-tag")).toHaveText(["北京", "上海", "广州", "深圳"]);
+  await expect(trend.locator(".city-tag")).toHaveText(["北京"]);
   await picker.getByRole("button", { name: "选择城市", exact: true }).click();
   const search = picker.getByLabel("搜索城市");
   await search.fill("没有这座城市");
@@ -314,15 +311,13 @@ test("searches tier-grouped cities, limits the index to five and keeps trend sel
   await search.press("Escape");
   expect(await picker.locator(".city-tag .city-color-swatch").evaluateAll((elements) => elements.map((element) => (element as HTMLElement).style.backgroundColor)))
     .toEqual([...colors.slice(1), colors[0]]);
-  await expect(trend.locator(".city-tag")).toHaveText(["北京", "上海", "广州", "深圳"]);
+  await expect(trend.locator(".city-tag")).toHaveText(["北京"]);
   await view.scrollIntoViewIfNeeded();
   await view.screenshot({ path: `/tmp/house-interval-multi-${testInfo.project.name}.png`, scale: "css" });
   await page.reload();
   await expect(picker.locator(".city-tag")).toHaveText(["上海", "广州", "深圳", "杭州", "南京"]);
   await view.getByLabel("结束月份").selectOption("2025-08");
-  await page.locator(".filter-toggle").click();
-  await page.locator(".filter-list").getByRole("combobox", { name: "指标", exact: true }).selectOption({ label: "同比" });
-  await page.getByRole("button", { name: "完成", exact: true }).click();
+  await page.getByRole("combobox", { name: "走势指标", exact: true }).selectOption({ label: "同比" });
   for (const city of ["上海", "广州", "深圳", "杭州", "南京"]) {
     await expect(view.locator(`tr[data-city="${city}"]`).getByTestId("interval-end-index"))
       .toHaveText((await expectedIndex(city, "2021-08", "2025-08")).toFixed(1));
@@ -331,7 +326,7 @@ test("searches tier-grouped cities, limits the index to five and keeps trend sel
 
 test("migrates old links, sanitizes multi-city links and preserves an empty city selection", async ({ page }) => {
   const view = page.locator(".interval-index-chart");
-  await page.goto("/?view=resale-all-mom&period=2026-08&indexCity=广州&indexStart=2021-08&indexEnd=2026-08");
+  await page.goto("/?section=cities&view=resale-all-mom&period=2026-08&indexCity=广州&indexStart=2021-08&indexEnd=2026-08");
   await expect(view.locator(".city-tag")).toHaveText(["广州"]);
   await expect(page).not.toHaveURL(/indexCity=/);
   await expect(page).toHaveURL(/indexCities=/);
@@ -345,7 +340,7 @@ test("migrates old links, sanitizes multi-city links and preserves an empty city
   await page.reload();
   await expect(view.getByRole("status")).toHaveText("请选择至少一个城市");
   await expect(view.locator(".city-tag")).toHaveCount(0);
-  await page.goto("/?view=resale-all-mom&period=2026-08&indexCity=南京&indexCities=不存在,北京,北京,上海,广州,深圳,杭州,南京");
+  await page.goto("/?section=cities&view=resale-all-mom&period=2026-08&indexCity=南京&indexCities=不存在,北京,北京,上海,广州,深圳,杭州,南京");
   await expect(view.locator(".city-tag")).toHaveText(["北京", "上海", "广州", "深圳", "杭州"]);
   await expect(view.locator(".interval-results tbody tr")).toHaveCount(5);
   await page.reload();
@@ -366,7 +361,7 @@ test("groups identical gaps by city and deduplicates segmented tooltip rows and 
       ? value * (shard.values[index]![cityIndex] ?? 100) / 100 : value, 100));
   }
   await page.route("**/data/shards/resale-all-mom.json", (route) => route.fulfill({ json: shard }));
-  await page.goto("/?view=resale-all-mom&period=2026-08&indexCities=北京,上海,广州,深圳&indexStart=2025-12&indexEnd=2026-08");
+  await page.goto("/?section=cities&view=resale-all-mom&period=2026-08&indexCities=北京,上海,广州,深圳&indexStart=2025-12&indexEnd=2026-08");
   const view = page.locator(".interval-index-chart");
   await expect(view.locator(".interval-fill-note p")).toHaveText([
     "* 北京、上海：缺失 2 个月环比数据：2026年1月 至 2026年2月。",
@@ -418,7 +413,7 @@ test("groups identical gaps by city and deduplicates segmented tooltip rows and 
 test("fits five-city results and endpoint labels on narrow screens without changing line colors", async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/?view=resale-all-mom&period=2026-08&indexCities=北京,上海,广州,深圳,乌鲁木齐&indexStart=2021-08&indexEnd=2026-08");
+  await page.goto("/?section=cities&view=resale-all-mom&period=2026-08&indexCities=北京,上海,广州,深圳,乌鲁木齐&indexStart=2021-08&indexEnd=2026-08");
   const view = page.locator(".interval-index-chart");
   for (const width of testInfo.project.name === "mobile" ? [320, 390, 430] : [768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 1000 });
@@ -444,7 +439,7 @@ test("fits five-city results and endpoint labels on narrow screens without chang
 
 test("rebases shortcut ranges on the selected end month and clears highlights for custom dates", async ({ page }) => {
   const first = (await localShard("resale-all-mom")).periods[0]!;
-  await page.goto("/?view=resale-all-mom&period=2026-08&indexCities=北京,上海&indexStart=2021-08&indexEnd=2026-08");
+  await page.goto("/?section=cities&view=resale-all-mom&period=2026-08&indexCities=北京,上海&indexStart=2021-08&indexEnd=2026-08");
   const view = page.locator(".interval-index-chart");
   const shortcuts = view.getByRole("group", { name: "区间指数快捷区间" });
   await expect(shortcuts.getByRole("button", { name: "近5年", exact: true })).toHaveAttribute("aria-pressed", "true");
@@ -484,7 +479,7 @@ test("rebases shortcut ranges on the selected end month and clears highlights fo
 });
 
 test("aligns shortcuts beside dates on desktop and in a full-width row on mobile", async ({ page }, testInfo) => {
-  await page.goto("/?view=resale-all-mom&period=2026-08&indexStart=2021-08&indexEnd=2026-08");
+  await page.goto("/?section=cities&view=resale-all-mom&period=2026-08&indexStart=2021-08&indexEnd=2026-08");
   const view = page.locator(".interval-index-chart");
   const shortcuts = view.getByRole("group", { name: "区间指数快捷区间" });
   // Keep fixed page chrome out of the component screenshots.

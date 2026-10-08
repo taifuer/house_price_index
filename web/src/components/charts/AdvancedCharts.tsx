@@ -11,12 +11,11 @@ import { COLORS, axisLabelStyle, splitLineStyle, symmetricScale } from "../../li
 import { HEATMAP_PALETTE, heatmapColor, heatmapHeight, heatmapLegendLabels, heatmapLimit } from "../../lib/cityHeatmap";
 import { loadShard } from "../../lib/data";
 import { completeMonths, formatMetric, formatPct, formatPeriod, roundOne } from "../../lib/format";
-import type { CityTier, DatasetDescriptor, DatasetShard, Manifest, TrendRange } from "../../types";
+import type { CityTier, DatasetDescriptor, DatasetShard, Manifest, TierFilter, TrendRange } from "../../types";
 
 echarts.use([EChartsHeatmapChart, GraphicComponent, MarkAreaComponent, VisualMapComponent]);
 
 type HeatmapRange = TrendRange;
-type TierFilter = "全部" | CityTier;
 
 const HEATMAP_MONTHS: Record<Exclude<HeatmapRange, "all">, number> = {
   "3y": 36,
@@ -41,10 +40,15 @@ interface CityViewProps {
   filePrefix: string;
 }
 
-function HeatmapChart({ manifest, descriptor, shard, period, filePrefix }: CityViewProps) {
+interface HeatmapProps extends CityViewProps {
+  range: TrendRange;
+  onRangeChange: (range: TrendRange) => void;
+  tier: TierFilter;
+  onTierChange: (tier: TierFilter) => void;
+}
+
+function HeatmapChart({ manifest, descriptor, shard, period, filePrefix, range, onRangeChange, tier, onTierChange }: HeatmapProps) {
   const isMobile = useMediaQuery("(max-width: 767px)");
-  const [range, setRange] = useState<HeatmapRange>("3y");
-  const [tier, setTier] = useState<TierFilter>("全部");
   const allPeriods = shard.periods.length ? completeMonths(shard.periods[0]!, period) : [];
   const scopedPeriods = range === "all" ? allPeriods : allPeriods.slice(-HEATMAP_MONTHS[range]);
   const visibleCities = manifest.cities.filter((city) => tier === "全部" || city.tier === tier);
@@ -190,7 +194,7 @@ function HeatmapChart({ manifest, descriptor, shard, period, filePrefix }: CityV
           <Segmented
             label="热力图城市层级"
             value={tier}
-            onChange={setTier}
+            onChange={onTierChange}
             options={(["全部", "一线", "二线", "三线"] as TierFilter[]).map((value) => ({ value, label: value }))}
           />
         </div>
@@ -198,7 +202,7 @@ function HeatmapChart({ manifest, descriptor, shard, period, filePrefix }: CityV
           <Segmented
             label="热力图时间范围"
             value={range}
-            onChange={setRange}
+            onChange={onRangeChange}
             options={HEATMAP_RANGE_OPTIONS.map((value) => ({
               value,
               label: HEATMAP_RANGE_LABELS[value],
@@ -387,7 +391,7 @@ function MomentumQuadrantChart({ manifest, momShard, yoyShard, period, filePrefi
   );
 }
 
-export function CityMonthlyView(props: CityViewProps) {
+export function CityMonthlyView(props: HeatmapProps) {
   return <HeatmapChart {...props} />;
 }
 

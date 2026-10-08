@@ -104,9 +104,7 @@ test("defaults to the latest published month", async ({ page }) => {
     `二手住宅 · 环比 · ${year}年${Number(month)}月`,
   );
   await expect(page.locator(".summary-item").first()).toContainText("70/70");
-  await expect(page.locator(".chart-canvas svg")).toHaveCount(8);
-  const heatmap = page.locator(".heatmap-chart");
-  await expect(heatmap.locator("svg text").filter({ hasText: `${year}-${month}` }).first()).toBeVisible();
+  await expect(page.locator(".chart-canvas svg")).toHaveCount(4);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
   expect(await findExtremeLabelOverlaps(extremeChart(page))).toEqual([]);
 });
@@ -116,18 +114,17 @@ test("renders the July 2026 dashboard without horizontal overflow", async ({ pag
   await expect(page.locator(".app-title")).toHaveText("全国 70 城房价指数");
   await expect(page.locator(".summary-item").nth(0)).toContainText("70/70");
   await expect(page.locator(".summary-item").last()).toContainText(/\[-?\d+\.\d%, \+?\d+\.\d%\]/);
-  await expect(page.locator(".section-title-label")).toHaveText(["价格概览", "价格趋势"]);
+  await expect(page.locator(".section-title")).toHaveText("价格概览");
   await expect(page.locator(".section-title-meta").first()).toHaveText("二手住宅 · 环比 · 2026年7月");
-  await expect(page.locator(".section-title-meta").nth(1)).toHaveText("二手住宅 · 环比");
   await expect(page.getByRole("button", { name: /下载.*CSV/ })).toHaveCount(0);
-  await expect(page.locator(".chart-canvas")).toHaveCount(8);
-  await expect(page.locator(".collapsible-section")).toHaveCount(2);
+  await expect(page.locator(".chart-canvas")).toHaveCount(4);
+  await expect(page.locator(".dashboard-section")).toHaveCount(1);
   await expect(page.locator(".footer-copyright")).toHaveText(`© ${new Date().getFullYear()} House Price Index`);
   await expect(page.locator(".footer-copyright")).toHaveCSS("white-space", "nowrap");
   await expect(page.locator(".app-footer")).toHaveCSS("font-size", "13px");
   const footerCenterOffset = await page.locator(".app-footer").evaluate((footer) => {
     const footerRect = footer.getBoundingClientRect();
-    const contentRects = [...footer.children].map((element) => element.getBoundingClientRect());
+    const contentRects = [...footer.children].map((element) => element.getBoundingClientRect()).filter((rect) => rect.width > 0);
     const contentLeft = Math.min(...contentRects.map((rect) => rect.left));
     const contentRight = Math.max(...contentRects.map((rect) => rect.right));
     return (contentLeft + contentRight) / 2 - (footerRect.left + footerRect.right) / 2;
@@ -141,12 +138,12 @@ test("renders the July 2026 dashboard without horizontal overflow", async ({ pag
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
   const headerContent = await page.locator(".app-header-inner").boundingBox();
-  const bodyContent = await page.locator(".collapsible-section").first().boundingBox();
+  const bodyContent = await page.locator(".dashboard-section").boundingBox();
   expect(headerContent).not.toBeNull();
   expect(bodyContent).not.toBeNull();
   expect(Math.abs(headerContent!.x - bodyContent!.x)).toBeLessThanOrEqual(1);
   expect(Math.abs(headerContent!.x + headerContent!.width - bodyContent!.x - bodyContent!.width)).toBeLessThanOrEqual(1);
-  const sourceGap = await page.locator(".collapsible-section").first().evaluate((section) => {
+  const sourceGap = await page.locator(".dashboard-section").evaluate((section) => {
     const meta = section.querySelector(".section-title-meta")?.getBoundingClientRect();
     const action = section.querySelector(".section-actions")?.getBoundingClientRect();
     return meta && action ? Math.round(action.left - meta.right) : -1;
@@ -242,11 +239,12 @@ test("keeps full-history year labels separated on narrow mobile charts", async (
     { view: "new-under-90-mom", firstYear: "2018年" },
   ];
   for (const item of cases) {
-    await page.goto(`/?view=${item.view}&period=2026-07`);
+    await page.goto(`/?section=cities&view=${item.view}&period=2026-07`);
     const cityTrend = page.locator(".city-trend-chart");
     await cityTrend.getByRole("button", { name: "全部", exact: true }).click();
     await expectMobileYearLabels(cityTrend, item.firstYear);
 
+    await page.getByRole("navigation").getByRole("link", { name: "历史趋势" }).click();
     const overallTrend = page.locator(".overall-trend-chart");
     await overallTrend.getByRole("button", { name: "全部", exact: true }).click();
     await expectMobileYearLabels(overallTrend, item.firstYear);
@@ -265,11 +263,11 @@ test("updates filters without a document reload", async ({ page }) => {
   expect(await page.evaluate(() => performance.getEntriesByType("navigation").length)).toBe(navigationCount);
 });
 
-test("collapses sections and keeps chart controls available", async ({ page }, testInfo) => {
-  const firstSection = page.locator(".collapsible-section").first();
-  await firstSection.locator(".section-toggle").click();
+test("switches task sections and keeps chart controls available", async ({ page }, testInfo) => {
+  const firstSection = page.locator('.dashboard-section[data-section="overview"]');
+  await page.getByRole("navigation").getByRole("link", { name: "历史趋势" }).click();
   await expect(firstSection.locator(".section-content")).toHaveCount(0);
-  await firstSection.locator(".section-toggle").click();
+  await page.getByRole("navigation").getByRole("link", { name: "月度概览" }).click();
   if (testInfo.project.name === "mobile") {
     await expect(firstSection.locator(".chart-actions")).toHaveCount(0);
   } else {
@@ -299,7 +297,9 @@ test("filter drawer overlays the dashboard and restores defaults", async ({ page
 
   await expect.poll(async () => {
     const box = await drawer.boundingBox();
-    return box ? Math.abs(box.x + box.width - page.viewportSize()!.width) : Number.POSITIVE_INFINITY;
+    const edge = testInfo.project.name === "mobile" ? page.viewportSize()!.width
+      : await page.locator(".app-header-inner").evaluate((header) => header.getBoundingClientRect().right);
+    return box ? Math.abs(box.x + box.width - edge) : Number.POSITIVE_INFINITY;
   }).toBeLessThanOrEqual(1);
   const drawerBox = await drawer.boundingBox();
   const mainAfter = await page.locator(".app-main").boundingBox();
@@ -308,7 +308,13 @@ test("filter drawer overlays the dashboard and restores defaults", async ({ page
   expect((await page.locator(".app-header").boundingBox())?.x).toBe(0);
   await expect(drawer.locator(".filter-select > svg")).toHaveCount(4);
   if (testInfo.project.name === "mobile") {
-    expect(drawerBox!.width).toBeCloseTo(Math.min(360, page.viewportSize()!.width - 52), 0);
+    expect(drawerBox!.width).toBeCloseTo(page.viewportSize()!.width, 0);
+    await expect.poll(async () => {
+      const box = (await drawer.boundingBox())!;
+      return Math.abs(box.y + box.height - page.viewportSize()!.height);
+    }).toBeLessThanOrEqual(1);
+  } else {
+    expect(drawerBox!.height).toBeLessThan(page.viewportSize()!.height * 0.75);
   }
 
   const closeButton = drawer.getByRole("button", { name: "关闭筛选" });
@@ -320,7 +326,7 @@ test("filter drawer overlays the dashboard and restores defaults", async ({ page
 
   await drawer.locator(".filter-list label").nth(1).locator("select").selectOption({ label: "新建商品住宅" });
   await expect(page.locator(".section-title-meta").first()).toContainText("新建商品住宅");
-  await expect(page.locator(".filter-count")).toHaveText("1");
+  await expect(page.locator(".filter-count")).toHaveAttribute("aria-label", "1 项非默认筛选");
   await drawer.getByRole("button", { name: "恢复默认" }).click();
   await expect(page.locator(".section-title-meta").first()).toContainText("二手住宅");
   await expect(page.locator(".filter-count")).toHaveCount(0);
@@ -367,28 +373,29 @@ test("chart download and fullscreen controls work", async ({ page }, testInfo) =
 });
 
 test("persists trend controls and scopes missing-data notes to the visible range", async ({ page }) => {
-  await page.goto("/?view=resale-all-mom&period=2026-07");
+  await page.goto("/?section=history&view=resale-all-mom&period=2026-07");
   const overallTrend = page.locator(".overall-trend-chart");
   const cityTrend = page.locator(".city-trend-chart");
   await expect(overallTrend.locator(".trend-note")).toContainText("18 个月份");
-  await expect(cityTrend.getByRole("button", { name: "近5年", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(cityTrend.locator(".trend-note")).toHaveCount(0);
 
   await overallTrend.getByRole("button", { name: "广度", exact: true }).click();
   await expect(overallTrend.getByText(/市场广度 =/)).toBeVisible();
   await overallTrend.getByRole("button", { name: "分层", exact: true }).click();
   await overallTrend.getByRole("button", { name: "近5年", exact: true }).click();
-  await cityTrend.getByRole("button", { name: "近3年", exact: true }).click();
   await expect(overallTrend.locator(".trend-note")).toHaveCount(0);
+  await page.getByRole("navigation").getByRole("link", { name: "城市看板" }).click();
+  await expect(cityTrend.getByRole("button", { name: "近5年", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await cityTrend.getByRole("button", { name: "近3年", exact: true }).click();
   await expect(cityTrend.locator(".trend-note")).toHaveCount(0);
   await expect(page).toHaveURL(/trend=tier/);
   await expect(page).toHaveURL(/range=5y/);
   await expect(page).toHaveURL(/cityRange=3y/);
 
   await page.reload();
+  await expect(cityTrend.getByRole("button", { name: "近3年", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("navigation").getByRole("link", { name: "历史趋势" }).click();
   await expect(overallTrend.getByRole("button", { name: "分层", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(overallTrend.getByRole("button", { name: "近5年", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(cityTrend.getByRole("button", { name: "近3年", exact: true })).toHaveAttribute("aria-pressed", "true");
 });
 
 test("groups monthly views with overview and trend sections", async ({ page }, testInfo) => {
@@ -397,8 +404,8 @@ test("groups monthly views with overview and trend sections", async ({ page }, t
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
   });
-  const overviewSection = page.locator(".collapsible-section").nth(0);
-  const trendSection = page.locator(".collapsible-section").nth(1);
+  const overviewSection = page.locator('.dashboard-section[data-section="overview"]');
+  const trendSection = page.locator('.dashboard-section[data-section="history"]');
   const heatmap = trendSection.locator(".heatmap-chart");
   const comparison = overviewSection.locator(".quadrant-chart");
   await expect(overviewSection.getByRole("heading", { level: 3 })).toHaveText([
@@ -408,11 +415,12 @@ test("groups monthly views with overview and trend sections", async ({ page }, t
     "城市层级对比",
     "城市环比与同比",
   ]);
-  await expect(trendSection.getByRole("heading", { level: 3 })).toHaveText(["整体趋势", "城市趋势", "走势对比", "区间指数"]);
+  await expect(comparison.locator(".chart-canvas svg")).toBeVisible();
+  await page.getByRole("navigation").getByRole("link", { name: "历史趋势" }).click();
+  await expect(trendSection.getByRole("heading", { level: 3 })).toHaveText(["整体趋势", "城市趋势"]);
   await expect(page.locator(".analysis-view-tabs")).toHaveCount(0);
   await expect(heatmap.locator(".chart-canvas svg")).toBeVisible();
-  await expect(comparison.locator(".chart-canvas svg")).toBeVisible();
-  await expect(page.locator(".chart-canvas")).toHaveCount(8);
+  await expect(page.locator(".chart-canvas")).toHaveCount(2);
   await expect(heatmap.getByText("层级", { exact: true })).toHaveCount(0);
   await expect(heatmap.getByText("时间范围", { exact: true })).toHaveCount(0);
   const controlBoxes = await heatmap.locator(".analysis-filter-control").evaluateAll((controls) => controls.map((control) => {
@@ -443,11 +451,12 @@ test("groups monthly views with overview and trend sections", async ({ page }, t
   const shardResponse = await page.request.get(`/data/${descriptor.path}`);
   const firstPeriod = (await shardResponse.json()).periods[0];
   await expect(heatmap.locator(".chart-canvas svg text").filter({ hasText: firstPeriod }).first()).toBeVisible();
-  await expect(heatmap.locator(".chart-canvas svg text").filter({ hasText: /^2026-07$/ }).first()).toBeVisible();
+  await expect(heatmap.locator(".chart-canvas svg text").filter({ hasText: /^2026-08$/ }).first()).toBeVisible();
   const screenshotStyle = await page.addStyleTag({ content: ".app-header { visibility: hidden !important; }" });
   await heatmap.screenshot({ path: `/tmp/house-v4-heatmap-${testInfo.project.name}.png` });
   await screenshotStyle.evaluate((element) => element.remove());
 
+  await page.getByRole("navigation").getByRole("link", { name: "月度概览" }).click();
   await expect(comparison.locator(".analysis-caption")).toContainText("共同覆盖 70/70 城");
   await expect(comparison.locator(".analysis-caption")).toContainText("重合城市数");
   await expect(comparison.locator(".chart-canvas svg text").filter({ hasText: /^(双升|双降)$/ })).toHaveCount(2);
@@ -474,6 +483,7 @@ test("groups monthly views with overview and trend sections", async ({ page }, t
 });
 
 test("tier trend and city selection render client-side", async ({ page }, testInfo) => {
+  await page.getByRole("navigation").getByRole("link", { name: "历史趋势" }).click();
   const trend = page.locator(".overall-trend-chart");
   const modeBox = await trend.locator(".trend-mode-row").boundingBox();
   const rangeBox = await trend.locator(".trend-range-row").boundingBox();
@@ -520,7 +530,10 @@ test("tier trend and city selection render client-side", async ({ page }, testIn
     expect(gap).toBeLessThanOrEqual(30);
   }
 
+  await page.getByRole("navigation").getByRole("link", { name: "城市看板" }).click();
   const defaultCityTrend = page.locator(".city-trend-chart");
+  // The loading placeholder uses the same class and is replaced when the shard resolves.
+  await expect(defaultCityTrend.locator(".chart-canvas svg")).toBeVisible();
   await defaultCityTrend.screenshot({ path: `/tmp/house-v4-city-trend-default-${testInfo.project.name}.png` });
 
   const cityPicker = page.locator(".city-trend-chart .city-picker");
@@ -530,7 +543,7 @@ test("tier trend and city selection render client-side", async ({ page }, testIn
   await cityPicker.getByPlaceholder("搜索城市").fill("南京");
   await expect(cityPicker.locator(".city-option-group-title")).toHaveText(["二线（1/31）"]);
   await cityPicker.getByRole("button", { name: "南京", exact: true }).click();
-  for (const city of ["天津", "重庆", "成都", "杭州", "武汉"]) {
+  for (const city of ["上海", "广州", "深圳", "天津", "重庆", "成都", "杭州", "武汉"]) {
     await cityPicker.getByPlaceholder("搜索城市").fill(city);
     await cityPicker.getByRole("button", { name: city, exact: true }).click();
   }
@@ -557,6 +570,7 @@ test("tier trend and city selection render client-side", async ({ page }, testIn
   await cityTrend.screenshot({ path: `/tmp/house-v4-city-trend-10-${testInfo.project.name}.png` });
 
   if (testInfo.project.name === "desktop") {
+    await page.getByRole("navigation").getByRole("link", { name: "历史趋势" }).click();
     await page.addStyleTag({ content: ".app-header { visibility: hidden !important; }" });
     await trend.scrollIntoViewIfNeeded();
     const box = await trend.boundingBox();

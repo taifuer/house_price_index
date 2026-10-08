@@ -10,7 +10,8 @@ test.beforeEach(async ({ page }) => {
 
 test("shows every city in equal-sized tier groups without a chart viewport", async ({ page }, testInfo) => {
   const overview = page.locator(".city-overview");
-  await expect(overview.locator(".data-view-toggle button")).toHaveText(["图", "表"]);
+  await expect(overview.getByRole("button", { name: "数据表", exact: true })).toHaveCount(0);
+  await expect(overview.getByRole("table")).toHaveCount(0);
   await expect(overview.locator(".city-matrix-cell > span").first()).toHaveCSS("font-size", "13px");
   await expect(overview.locator(".city-matrix-cell > strong").first()).toHaveCSS("font-size", "14px");
   const groups = overview.locator(".city-matrix-tier");
@@ -33,17 +34,18 @@ test("shows every city in equal-sized tier groups without a chart viewport", asy
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
 });
 
-test("matrix supports keyboard city navigation and sortable details", async ({ page }) => {
+test("matrix supports keyboard city navigation and preserves the overview on return", async ({ page }) => {
   const overview = page.locator(".city-overview");
   const city = overview.getByRole("button", { name: /^北京，/ });
   await city.focus();
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/cities=%E5%8C%97%E4%BA%AC|cities=北京/);
+  await expect(page).toHaveURL(/section=cities/);
+  await expect(page.locator(".city-page-title")).toHaveText("北京");
   await expect(page.locator(".city-trend-anchor")).toBeFocused();
-  await overview.getByRole("button", { name: "数据表", exact: true }).click();
-  await expect(overview.locator("tbody tr")).toHaveCount(70);
-  await overview.getByRole("button", { name: "涨跌幅", exact: true }).click();
-  await expect(overview.getByRole("columnheader", { name: "涨跌幅" })).toHaveAttribute("aria-sort", "ascending");
+  await page.getByRole("navigation").getByRole("link", { name: "月度概览" }).click();
+  await expect(overview.locator(".city-matrix-cell")).toHaveCount(70);
+  await overview.getByRole("button", { name: "一线", exact: true }).click();
+  await expect(overview.locator(".city-matrix-cell")).toHaveCount(4);
 });
 
 test("matrix exports a complete PNG on desktop and hides download on mobile", async ({ page }, testInfo) => {
@@ -77,6 +79,7 @@ test("matrix exports a complete PNG on desktop and hides download on mobile", as
 });
 
 test("heatmap displays all city rows and the actual selected date range", async ({ page }, testInfo) => {
+  await page.getByRole("navigation").getByRole("link", { name: "历史趋势" }).click();
   const heatmap = page.locator(".heatmap-chart");
   const canvas = heatmap.locator(".chart-canvas");
   const manifest = await (await page.request.get("/data/manifest.json")).json() as Manifest;
@@ -127,6 +130,7 @@ test("keeps missing cities distinct from flat values and preserves unclipped too
   await expect(missing).toContainText("—");
   await expect(missing).toHaveClass(/is-missing/);
   expect(await missing.evaluate((cell) => getComputedStyle(cell).backgroundColor)).not.toBe(await flat.evaluate((cell) => getComputedStyle(cell).backgroundColor));
+  await page.getByRole("navigation").getByRole("link", { name: "历史趋势" }).click();
   await expect(page.locator(".heatmap-chart .trend-note")).toContainText("1 个月份存在缺失");
   await expect(page.locator(".heatmap-chart svg pattern").first()).toBeAttached();
   const heatmap = page.locator(".heatmap-chart");
@@ -144,9 +148,12 @@ test("keeps missing cities distinct from flat values and preserves unclipped too
 
 test("matrix text and heatmap date labels fit narrow and tablet viewports", async ({ page }) => {
   const heatmap = page.locator(".heatmap-chart");
+  await page.getByRole("navigation").getByRole("link", { name: "历史趋势" }).click();
   await heatmap.getByRole("group", { name: "热力图城市层级" }).getByRole("button", { name: "一线", exact: true }).click();
   for (const width of [320, 390, 768, 1024]) {
     await page.setViewportSize({ width, height: 844 });
+    await page.getByRole("navigation").getByRole("link", { name: "月度概览" }).click();
+    await expect(page.locator(".city-matrix-cell")).toHaveCount(70);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
     const textOverflows = await page.locator(".city-matrix-cell").evaluateAll((cells) => cells.filter((cell) => {
       const rect = cell.getBoundingClientRect();
@@ -156,6 +163,7 @@ test("matrix text and heatmap date labels fit narrow and tablet viewports", asyn
       });
     }).map((cell) => cell.textContent));
     expect(textOverflows).toEqual([]);
+    await page.getByRole("navigation").getByRole("link", { name: "历史趋势" }).click();
     for (const label of ["近3年", "全部"]) {
       await heatmap.getByRole("group", { name: "热力图时间范围" }).getByRole("button", { name: label, exact: true }).click();
       await expect(heatmap.locator("svg text").filter({ hasText: /^2026-08$/ })).toHaveCount(2);

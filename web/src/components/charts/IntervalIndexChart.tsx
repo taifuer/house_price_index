@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { EChartsCoreOption } from "echarts/core";
 
 import { EChart } from "../EChart";
@@ -23,18 +23,19 @@ const rangeOptions: ReadonlyArray<{ value: TrendRange; label: string }> = [
 interface IntervalIndexChartProps {
   manifest: Manifest;
   descriptor: DatasetDescriptor;
-  shard: DatasetShard;
+  shard?: DatasetShard;
+  housingControl?: ReactNode;
   selection: IntervalSelection;
   onSelectionChange: (selection: IntervalSelection) => void;
 }
 
-export function IntervalIndexChart({ manifest, descriptor, shard, selection, onSelectionChange }: IntervalIndexChartProps) {
+export function IntervalIndexChart({ manifest, descriptor, shard, selection, onSelectionChange, housingControl }: IntervalIndexChartProps) {
   const isMobile = useMediaQuery("(max-width: 767px)");
   const momDescriptor = datasetForSelection(manifest, descriptor.houseType, descriptor.sizeBand, "环比");
   const [loaded, setLoaded] = useState<DatasetShard | null>(null);
   const [error, setError] = useState<{ id: string; message: string } | null>(null);
   useEffect(() => {
-    if (!momDescriptor || descriptor.id === momDescriptor.id) return;
+    if (!momDescriptor || shard?.id === momDescriptor.id) return;
     let active = true;
     setError(null);
     loadShard(momDescriptor).then((data) => {
@@ -43,8 +44,8 @@ export function IntervalIndexChart({ manifest, descriptor, shard, selection, onS
       if (active) setError({ id: momDescriptor.id, message: reason instanceof Error ? reason.message : "环比数据加载失败" });
     });
     return () => { active = false; };
-  }, [descriptor.id, momDescriptor]);
-  const momShard = descriptor.id === momDescriptor?.id ? shard : loaded?.id === momDescriptor?.id ? loaded : null;
+  }, [shard?.id, momDescriptor]);
+  const momShard = shard && shard.id === momDescriptor?.id ? shard : loaded?.id === momDescriptor?.id ? loaded : null;
   const loadError = !momDescriptor ? "当前住宅类型和面积段缺少环比数据。"
     : !momShard && error?.id === momDescriptor.id ? error.message : null;
   const periods = useMemo(() => momDescriptor?.periods.length
@@ -192,6 +193,7 @@ export function IntervalIndexChart({ manifest, descriptor, shard, selection, onS
         <h3>区间指数</h3>
         <span className="interval-meta">{scope} · 环比连乘 · 起点 = 100</span>
       </div>
+      {housingControl}
       <CityPicker cities={manifest.cities} selected={selection.cities} colors={cityColors}
         label="区间指数城市选择" maxSelected={MAX_INTERVAL_CITIES}
         onChange={(cities) => onSelectionChange({ ...selection, cities })} />

@@ -1,9 +1,7 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { EChartsCoreOption } from "echarts/core";
 
 import { EChart } from "../EChart";
-import { DataViewToggle, type DataView } from "../DataViewToggle";
-import { ObservationTable } from "../ObservationTable";
 import { CityChangeMatrix } from "../CityChangeMatrix";
 import { Segmented } from "../Segmented";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
@@ -17,9 +15,7 @@ import {
   COLORS,
   splitLineStyle,
 } from "../../lib/chartTheme";
-import type { CityDatum, CityTier, DatasetDescriptor, DatasetShard, Manifest } from "../../types";
-
-type TierFilter = "全部" | CityTier;
+import type { CityDatum, CityTier, DatasetDescriptor, DatasetShard, Manifest, TierFilter } from "../../types";
 
 interface AxisExtent {
   min: number;
@@ -48,13 +44,12 @@ interface CityOverviewProps {
   shard: DatasetShard;
   descriptor: DatasetDescriptor;
   period: string;
-  view: DataView;
-  onViewChange: (view: DataView) => void;
   onViewCity: (city: string) => void;
+  tier: TierFilter;
+  onTierChange: (tier: TierFilter) => void;
 }
 
-export function CityOverview({ filePrefix, manifest, shard, descriptor, period, view, onViewChange, onViewCity }: CityOverviewProps) {
-  const [tier, setTier] = useState<TierFilter>("全部");
+export function CityOverview({ filePrefix, manifest, shard, descriptor, period, onViewCity, tier, onTierChange }: CityOverviewProps) {
   const rows = useMemo(() => buildObservations(manifest, shard, [period])
     .filter((row) => tier === "全部" || row.tier === tier), [manifest, period, shard, tier]);
 
@@ -62,26 +57,16 @@ export function CityOverview({ filePrefix, manifest, shard, descriptor, period, 
     <div className="chart-block city-overview">
       <div className="chart-heading-row data-chart-heading">
         <h3>城市涨跌</h3>
-        <DataViewToggle value={view} onChange={onViewChange} label="城市涨跌显示方式" matrix />
         <div className="data-chart-filter">
           <Segmented
             label="城市层级"
             value={tier}
-            onChange={setTier}
+            onChange={onTierChange}
             options={(["全部", "一线", "二线", "三线"] as TierFilter[]).map((value) => ({ value, label: value }))}
           />
         </div>
       </div>
-      {view === "data" ? (
-        <ObservationTable
-          key={`${descriptor.id}-${period}-${tier}`}
-          rows={rows}
-          descriptor={descriptor}
-          onViewCity={onViewCity}
-        />
-      ) : (
-        <CityChangeMatrix rows={rows} metric={descriptor.metric} filePrefix={filePrefix} onViewCity={onViewCity} />
-      )}
+      <CityChangeMatrix rows={rows} metric={descriptor.metric} filePrefix={filePrefix} onViewCity={onViewCity} />
     </div>
   );
 }

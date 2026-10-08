@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { DatasetShard, Manifest } from "../types";
 import { completeMonths, periodsForRange } from "./format";
-import { buildObservations, sortObservations } from "./observations";
+import { buildObservations } from "./observations";
 
 const manifest = {
   cities: [
@@ -18,7 +18,7 @@ const shard: DatasetShard = {
   values: [[100.2, 100, 99.8], [99.9, null, 100.1]],
 };
 
-describe("observation tables", () => {
+describe("city observations", () => {
   it("preserves original indices and distinguishes missing data from zero growth", () => {
     const rows = buildObservations(manifest, shard, ["2026-01", "2026-03"]);
     expect(rows).toHaveLength(6);
@@ -41,21 +41,6 @@ describe("observation tables", () => {
     expect(rows).toHaveLength(72);
     expect(rows[0]?.period).toBe("2023-04");
     expect(rows.at(-1)?.period).toBe("2026-03");
-  });
-
-  it("sorts numbers numerically, missing values last in both directions, without mutating rows", () => {
-    const rows = buildObservations(manifest, shard, ["2026-03"]);
-    expect(sortObservations(rows, { key: "value", direction: "asc" }).map((row) => row.value)).toEqual([99.9, 100.1, null]);
-    expect(sortObservations(rows, { key: "change", direction: "desc" }).map((row) => row.change)).toEqual([0.1, -0.1, null]);
-    expect(rows.map((row) => row.city)).toEqual(["北京", "上海", "天津"]);
-  });
-
-  it("defaults history to newest month and sorts tiers in tier order", () => {
-    const rows = buildObservations(manifest, shard, shard.periods);
-    expect(sortObservations(rows, { key: "period", direction: "desc" }).map((row) => row.period)).toEqual([
-      "2026-03", "2026-03", "2026-03", "2026-01", "2026-01", "2026-01",
-    ]);
-    expect(sortObservations(rows, { key: "tier", direction: "asc" }).at(-1)?.tier).toBe("二线");
   });
 
 });
