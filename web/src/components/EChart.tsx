@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { BarChart, CustomChart, LineChart, ScatterChart } from "echarts/charts";
 import {
   AriaComponent,
@@ -154,7 +154,7 @@ export function EChart({ option, height, ariaLabel, fileName, showReset = false,
       <div
         ref={canvasRef}
         className="chart-canvas"
-        style={{ height }}
+        style={{ height, "--chart-height": `${height}px` } as CSSProperties}
         role="img"
         aria-label={ariaLabel}
       />

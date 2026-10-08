@@ -38,6 +38,13 @@ describe("data transforms", () => {
     ]);
   });
 
+  it("assigns equal ranks to equal published changes", () => {
+    const tied = { ...shard, periods: ["2026-01"], values: [[99.8, 99.8, 99.6]] };
+    const values = cityDataForPeriod(manifest, tied, "2026-01");
+    expect(values.map((item) => item.rank)).toEqual([1, 1, 3]);
+    expect(values.map((item) => item.city)).toEqual(["北京", "上海", "天津"]);
+  });
+
   it("derives market breadth from covered cities", () => {
     expect(marketBreadth({ up: 40, down: 20, covered: 70 })).toBe(28.6);
     expect(marketBreadth({ up: 0, down: 0, covered: 0 })).toBeNull();

@@ -104,9 +104,9 @@ test("defaults to the latest published month", async ({ page }) => {
     `二手住宅 · 环比 · ${year}年${Number(month)}月`,
   );
   await expect(page.locator(".summary-item").first()).toContainText("70/70");
-  await expect(page.locator(".chart-canvas svg")).toHaveCount(9);
+  await expect(page.locator(".chart-canvas svg")).toHaveCount(8);
   const heatmap = page.locator(".heatmap-chart");
-  await expect(heatmap.locator("svg text").filter({ hasText: `${year.slice(-2)}年${Number(month)}月` })).toBeVisible();
+  await expect(heatmap.locator("svg text").filter({ hasText: `${year}-${month}` }).first()).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
   expect(await findExtremeLabelOverlaps(extremeChart(page))).toEqual([]);
 });
@@ -120,7 +120,7 @@ test("renders the July 2026 dashboard without horizontal overflow", async ({ pag
   await expect(page.locator(".section-title-meta").first()).toHaveText("二手住宅 · 环比 · 2026年7月");
   await expect(page.locator(".section-title-meta").nth(1)).toHaveText("二手住宅 · 环比");
   await expect(page.getByRole("button", { name: /下载.*CSV/ })).toHaveCount(0);
-  await expect(page.locator(".chart-canvas")).toHaveCount(9);
+  await expect(page.locator(".chart-canvas")).toHaveCount(8);
   await expect(page.locator(".collapsible-section")).toHaveCount(2);
   await expect(page.locator(".footer-copyright")).toHaveText(`© ${new Date().getFullYear()} House Price Index`);
   await expect(page.locator(".footer-copyright")).toHaveCSS("white-space", "nowrap");
@@ -137,7 +137,7 @@ test("renders the July 2026 dashboard without horizontal overflow", async ({ pag
   const distribution = page.locator(".compact-chart").filter({ has: page.getByRole("heading", { name: "城市涨跌分布" }) });
   await expect.poll(() => distribution.locator(".chart-canvas svg text").filter({ hasText: /^15$/ }).count()).toBeGreaterThanOrEqual(2);
   await distribution.screenshot({ path: `/tmp/house-v4-distribution-${testInfo.project.name}.png` });
-  await expect(page.locator(".ranking-chart .chart-canvas svg text").filter({ hasText: /^城市$/ })).toHaveCount(0);
+  await expect(page.locator(".city-overview .chart-canvas svg text").filter({ hasText: /^城市$/ })).toHaveCount(0);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
   const headerContent = await page.locator(".app-header-inner").boundingBox();
@@ -153,26 +153,7 @@ test("renders the July 2026 dashboard without horizontal overflow", async ({ pag
   });
   expect(sourceGap).toBeGreaterThanOrEqual(0);
   expect(sourceGap).toBeLessThanOrEqual(4);
-  if (testInfo.project.name === "mobile") {
-    const rankingSpacing = await page.locator(".ranking-chart .chart-canvas svg").evaluate((svg) => {
-      const rectangles = [...svg.querySelectorAll("*")].map((element) => {
-        const rect = element.getBoundingClientRect();
-        return { fill: element.getAttribute("fill"), rect };
-      });
-      const selection = rectangles.find(({ fill, rect }) => fill === "#93b4e8" && rect.width > 100);
-      if (!selection) return null;
-      const nearestLabelBottom = Math.max(
-        ...[...svg.querySelectorAll("text")]
-          .map((element) => element.getBoundingClientRect())
-          .filter((rect) => rect.bottom <= selection.rect.top && rect.bottom > selection.rect.top - 100)
-          .map((rect) => rect.bottom),
-      );
-      return selection.rect.top - nearestLabelBottom;
-    });
-    expect(rankingSpacing).not.toBeNull();
-    expect(rankingSpacing!).toBeGreaterThanOrEqual(8);
-    expect(rankingSpacing!).toBeLessThanOrEqual(30);
-  }
+  await expect(page.locator(".city-matrix-cell")).toHaveCount(70);
   await page.screenshot({ path: `/tmp/house-v4-${testInfo.project.name}.png`, fullPage: true });
   if (testInfo.project.name === "desktop") {
     await page.screenshot({ path: "/tmp/house-v4-overview.png", fullPage: false });
@@ -369,7 +350,7 @@ test("chart download and fullscreen controls work", async ({ page }, testInfo) =
   const downloadPromise = page.waitForEvent("download");
   await downloadButton.click();
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toMatch(/城市排名\.png$/);
+  expect(download.suggestedFilename()).toMatch(/首尾城市对比\.png$/);
   const downloadPath = await download.path();
   expect(downloadPath).not.toBeNull();
   const signature = (await readFile(downloadPath!)).subarray(0, 8);
@@ -421,7 +402,7 @@ test("groups monthly views with overview and trend sections", async ({ page }, t
   const heatmap = trendSection.locator(".heatmap-chart");
   const comparison = overviewSection.locator(".quadrant-chart");
   await expect(overviewSection.getByRole("heading", { level: 3 })).toHaveText([
-    "城市排名",
+    "城市涨跌",
     "首尾城市对比",
     "城市涨跌分布",
     "城市层级对比",
@@ -431,7 +412,7 @@ test("groups monthly views with overview and trend sections", async ({ page }, t
   await expect(page.locator(".analysis-view-tabs")).toHaveCount(0);
   await expect(heatmap.locator(".chart-canvas svg")).toBeVisible();
   await expect(comparison.locator(".chart-canvas svg")).toBeVisible();
-  await expect(page.locator(".chart-canvas")).toHaveCount(9);
+  await expect(page.locator(".chart-canvas")).toHaveCount(8);
   await expect(heatmap.getByText("层级", { exact: true })).toHaveCount(0);
   await expect(heatmap.getByText("时间范围", { exact: true })).toHaveCount(0);
   const controlBoxes = await heatmap.locator(".analysis-filter-control").evaluateAll((controls) => controls.map((control) => {
@@ -457,9 +438,12 @@ test("groups monthly views with overview and trend sections", async ({ page }, t
   await rangeTabs.getByRole("button", { name: "全部", exact: true }).click();
   await expect(rangeTabs.getByRole("button", { name: "全部", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.waitForTimeout(350);
-  const visibleStartPeriod = testInfo.project.name === "mobile" ? "25年8月" : "23年8月";
-  await expect(heatmap.locator(".chart-canvas svg text").filter({ hasText: new RegExp(`^${visibleStartPeriod}$`) })).toBeVisible();
-  await expect(heatmap.locator(".chart-canvas svg text").filter({ hasText: /^26年7月$/ })).toBeVisible();
+  const manifest = await (await page.request.get("/data/manifest.json")).json();
+  const descriptor = manifest.datasets.find((item: { id: string }) => item.id === "resale-all-mom");
+  const shardResponse = await page.request.get(`/data/${descriptor.path}`);
+  const firstPeriod = (await shardResponse.json()).periods[0];
+  await expect(heatmap.locator(".chart-canvas svg text").filter({ hasText: firstPeriod }).first()).toBeVisible();
+  await expect(heatmap.locator(".chart-canvas svg text").filter({ hasText: /^2026-07$/ }).first()).toBeVisible();
   const screenshotStyle = await page.addStyleTag({ content: ".app-header { visibility: hidden !important; }" });
   await heatmap.screenshot({ path: `/tmp/house-v4-heatmap-${testInfo.project.name}.png` });
   await screenshotStyle.evaluate((element) => element.remove());

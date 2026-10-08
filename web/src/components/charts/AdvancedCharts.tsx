@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { HeatmapChart as EChartsHeatmapChart } from "echarts/charts";
-import { MarkAreaComponent, VisualMapComponent } from "echarts/components";
+import { GraphicComponent, MarkAreaComponent, VisualMapComponent } from "echarts/components";
 import * as echarts from "echarts/core";
 import type { EChartsCoreOption } from "echarts/core";
 
@@ -8,11 +8,12 @@ import { EChart } from "../EChart";
 import { Segmented } from "../Segmented";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { COLORS, axisLabelStyle, splitLineStyle, symmetricScale } from "../../lib/chartTheme";
+import { HEATMAP_PALETTE, heatmapColor, heatmapHeight, heatmapLegendLabels, heatmapLimit } from "../../lib/cityHeatmap";
 import { loadShard } from "../../lib/data";
 import { completeMonths, formatMetric, formatPct, formatPeriod, roundOne } from "../../lib/format";
 import type { CityTier, DatasetDescriptor, DatasetShard, Manifest, TrendRange } from "../../types";
 
-echarts.use([EChartsHeatmapChart, MarkAreaComponent, VisualMapComponent]);
+echarts.use([EChartsHeatmapChart, GraphicComponent, MarkAreaComponent, VisualMapComponent]);
 
 type HeatmapRange = TrendRange;
 type TierFilter = "全部" | CityTier;
@@ -49,100 +50,99 @@ function HeatmapChart({ manifest, descriptor, shard, period, filePrefix }: CityV
   const visibleCities = manifest.cities.filter((city) => tier === "全部" || city.tier === tier);
   const rowsByPeriod = new Map(shard.periods.map((item, index) => [item, shard.values[index] ?? []]));
   const cityIndexes = new Map(manifest.cities.map((city, index) => [city.name, index]));
-  const maximum = Math.max(0.5, ...scopedPeriods.flatMap((item) => (
-    (rowsByPeriod.get(item) ?? []).flatMap((value) => value == null ? [] : [Math.abs(roundOne(value - 100))])
-  )));
-  const visibleRowCount = Math.min(visibleCities.length, isMobile ? 18 : 30);
-  const showRowZoom = visibleCities.length > visibleRowCount;
-  const visiblePeriodCount = Math.min(scopedPeriods.length, isMobile ? 12 : 36);
-  const showPeriodZoom = scopedPeriods.length > visiblePeriodCount;
-  const gridBottom = showPeriodZoom ? 112 : 74;
+  const maximum = heatmapLimit(descriptor.metric);
+  const legendLabels = heatmapLegendLabels(descriptor.metric);
+  const legendWidth = isMobile ? 180 : 220;
+  const showPeriodZoom = scopedPeriods.length > 12;
+  const gridBottom = showPeriodZoom ? 106 : 72;
+  const missingMonths = scopedPeriods.filter((item) => visibleCities.some((city) => (
+    rowsByPeriod.get(item)?.[cityIndexes.get(city.name)!] == null
+  ))).length;
+  const monthAxis = {
+    type: "category",
+    data: scopedPeriods,
+    axisLine: { lineStyle: { color: "#cbd5e1" } },
+    axisTick: { show: false },
+    axisLabel: {
+      ...axisLabelStyle,
+      interval: "auto",
+      hideOverlap: true,
+      showMinLabel: true,
+      showMaxLabel: true,
+      formatter: (value: string) => value,
+    },
+  };
 
   const option = useMemo<EChartsCoreOption>(() => ({
-    animationDuration: 250,
+    animation: false,
     aria: { enabled: true, description: `${formatMetric(descriptor.metric)}${HEATMAP_RANGE_LABELS[range]}的城市涨跌幅热力图` },
-    grid: { left: isMobile ? 48 : 62, right: showRowZoom ? (isMobile ? 62 : 34) : 16, top: 38, bottom: gridBottom },
+    grid: { left: isMobile ? 58 : 62, right: isMobile ? 26 : 30, top: 48, bottom: gridBottom },
     tooltip: {
       trigger: "item",
       confine: true,
       formatter: (raw: unknown) => {
-        const values = (raw as { value: [number, number, number | null] }).value;
+        const params = raw as { value: [number, number, number]; data: { missing: boolean } };
+        const values = params.value;
         const city = visibleCities[values[1]];
         const selectedPeriod = scopedPeriods[values[0]];
         if (!city || !selectedPeriod) return "";
-        return `${city.name}（${city.tier}）<br/>${formatPeriod(selectedPeriod)}<br/>${formatMetric(descriptor.metric)} ${values[2] == null ? "无数据" : formatPct(values[2])}`;
+        return `${city.name}（${city.tier}）<br/>${formatPeriod(selectedPeriod)}<br/>${formatMetric(descriptor.metric)} ${params.data.missing ? "无数据" : formatPct(values[2])}`;
       },
     },
-    xAxis: {
-      type: "category",
-      data: scopedPeriods,
-      axisLine: { lineStyle: { color: "#cbd5e1" } },
-      axisTick: { show: false },
-      axisLabel: {
-        ...axisLabelStyle,
-        interval: "auto",
-        hideOverlap: true,
-        showMinLabel: true,
-        showMaxLabel: true,
-        formatter: (value: string) => `${value.slice(2, 4)}年${Number(value.slice(5))}月`,
-      },
-    },
+    xAxis: [monthAxis, { ...monthAxis, position: "top" }],
     yAxis: {
       type: "category",
       data: visibleCities.map((city) => city.name),
       inverse: true,
       axisLine: { show: false },
       axisTick: { show: false },
-      axisLabel: { ...axisLabelStyle, color: COLORS.text, fontSize: isMobile ? 9 : 10 },
+      axisLabel: { ...axisLabelStyle, interval: 0, color: COLORS.text, fontSize: isMobile ? 11 : 12 },
     },
     visualMap: {
+      show: false,
       min: -maximum,
       max: maximum,
       precision: 1,
-      dimension: 2,
-      orient: "horizontal",
-      left: "center",
-      bottom: 2,
-      itemWidth: 14,
-      itemHeight: isMobile ? 150 : 220,
-      text: ["上涨", "下跌"],
-      textStyle: axisLabelStyle,
-      inRange: { color: [COLORS.down, COLORS.downSoft, "#f2f4f7", COLORS.upSoft, COLORS.up] },
+      dimension: 3,
+      seriesIndex: [0],
+      inRange: { color: HEATMAP_PALETTE },
+      outOfRange: { color: "#ffffff" },
       calculable: false,
     },
+    graphic: [{
+      type: "group",
+      left: "center",
+      bottom: 6,
+      silent: true,
+      children: [
+        {
+          type: "rect",
+          shape: { x: 0, y: 0, width: legendWidth, height: 8, r: 2 },
+          style: { fill: { type: "linear", x: 0, y: 0, x2: 1, y2: 0, colorStops: HEATMAP_PALETTE.map((color, index) => ({ offset: index / 4, color })) } },
+        },
+        ...legendLabels.map((text, index) => ({
+          type: "text",
+          x: index * legendWidth / 2,
+          y: 14,
+          style: { text, fill: COLORS.muted, fontSize: 11, align: index === 0 ? "left" : index === 1 ? "center" : "right" },
+        })),
+        { type: "text", x: legendWidth + 14, y: 4, style: { text: "▧ 缺失", fill: COLORS.muted, fontSize: 11 } },
+      ],
+    }],
     dataZoom: [
-      ...(showRowZoom ? [{
-        type: "slider",
-        yAxisIndex: 0,
-        orient: "vertical",
-        right: isMobile ? 36 : 2,
-        top: 38,
-        bottom: gridBottom,
-        width: 16,
-        startValue: 0,
-        endValue: visibleRowCount - 1,
-        minValueSpan: visibleRowCount - 1,
-        maxValueSpan: visibleRowCount - 1,
-        zoomLock: true,
-        brushSelect: false,
-        showDetail: false,
-        borderColor: "#cbd5e1",
-        borderWidth: 1,
-        fillerColor: "rgba(37, 99, 235, 0.2)",
-        handleStyle: { color: "#ffffff", borderColor: COLORS.selection, borderWidth: 2 },
-        moveHandleStyle: { color: COLORS.selection, opacity: 0.82 },
-      }] : []),
       ...(showPeriodZoom ? [{
         type: "slider",
-        xAxisIndex: 0,
-        left: isMobile ? 48 : 62,
-        right: showRowZoom ? (isMobile ? 62 : 34) : 16,
-        bottom: 45,
+        xAxisIndex: [0, 1],
+        left: isMobile ? 58 : 62,
+        right: isMobile ? 26 : 30,
+        bottom: 60,
         height: 18,
-        startValue: scopedPeriods.length - visiblePeriodCount,
+        startValue: 0,
         endValue: scopedPeriods.length - 1,
+        minValueSpan: 5,
         brushSelect: false,
-        showDetail: false,
+        showDetail: true,
+        labelFormatter: (_value: number, label: string) => label,
         borderColor: "#b8c5d6",
         borderWidth: 1,
         fillerColor: "rgba(37, 99, 235, 0.24)",
@@ -161,17 +161,26 @@ function HeatmapChart({ manifest, descriptor, shard, period, filePrefix }: CityV
     ],
     series: [{
       type: "heatmap",
+      dimensions: ["month", "city", "change", "intensity"],
+      encode: { x: "month", y: "city", value: "change" },
       data: scopedPeriods.flatMap((item, periodIndex) => visibleCities.map((city, cityIndex) => {
         const sourceIndex = cityIndexes.get(city.name);
         const value = sourceIndex == null ? null : rowsByPeriod.get(item)?.[sourceIndex];
-        return value == null
-          ? { value: [periodIndex, cityIndex, null], itemStyle: { color: "#eaecf0" } }
-          : [periodIndex, cityIndex, roundOne(value - 100)];
+        const change = value == null ? null : roundOne(value - 100);
+        return {
+          // Only the colour channel is clipped; tooltips retain the published change.
+          value: [periodIndex, cityIndex, change ?? 0, change == null ? maximum * 2 : Math.max(-maximum, Math.min(maximum, change))],
+          missing: change == null,
+          itemStyle: {
+            color: heatmapColor(change, descriptor.metric),
+            ...(change == null ? { decal: { symbol: "rect", dashArrayX: [1, 0], dashArrayY: [2, 4], rotation: -Math.PI / 4, color: "#cbd5e1" } } : {}),
+          },
+        };
       })),
       itemStyle: { borderColor: "#ffffff", borderWidth: 0.8 },
       emphasis: { itemStyle: { borderColor: COLORS.text, borderWidth: 1.5 } },
     }],
-  }), [cityIndexes, descriptor.metric, gridBottom, isMobile, maximum, range, rowsByPeriod, scopedPeriods, showPeriodZoom, showRowZoom, visibleCities, visiblePeriodCount, visibleRowCount]);
+  }), [cityIndexes, descriptor.metric, gridBottom, isMobile, legendLabels, legendWidth, maximum, monthAxis, range, rowsByPeriod, scopedPeriods, showPeriodZoom, visibleCities]);
 
   return (
     <div className="chart-block heatmap-chart">
@@ -199,12 +208,13 @@ function HeatmapChart({ manifest, descriptor, shard, period, filePrefix }: CityV
       </div>
       <EChart
         option={option}
-        height={610}
+        height={heatmapHeight(visibleCities.length, isMobile)}
         ariaLabel="城市月份涨跌幅热力图"
         fileName={`${filePrefix}-城市月份热力图`}
-        showReset={!isMobile && (showRowZoom || showPeriodZoom)}
+        showReset={!isMobile && showPeriodZoom}
         className="heatmap-chart-shell"
       />
+      {missingMonths > 0 && <p className="trend-note">当前范围有 {missingMonths} 个月份存在缺失；斜线格表示缺失数据，不计作持平。</p>}
     </div>
   );
 }

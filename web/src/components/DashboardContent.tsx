@@ -11,7 +11,7 @@ import { SummaryGrid } from "./SummaryGrid";
 import {
   DistributionChart,
   ExtremeChart,
-  RankingChart,
+  CityOverview,
   TierComparisonChart,
 } from "./charts/OverviewCharts";
 import { CityTrendChart, OverallTrendChart } from "./charts/TrendCharts";
@@ -116,10 +116,8 @@ export default function DashboardContent({
         )}
       >
         <SummaryGrid data={cityData} manifest={manifest} />
-        <RankingChart
-          data={cityData}
+        <CityOverview
           filePrefix={filePrefix}
-          metric={descriptor.metric}
           manifest={manifest}
           shard={shard}
           descriptor={descriptor}

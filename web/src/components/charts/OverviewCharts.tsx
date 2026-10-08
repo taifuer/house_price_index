@@ -4,6 +4,7 @@ import type { EChartsCoreOption } from "echarts/core";
 import { EChart } from "../EChart";
 import { DataViewToggle, type DataView } from "../DataViewToggle";
 import { ObservationTable } from "../ObservationTable";
+import { CityChangeMatrix } from "../CityChangeMatrix";
 import { Segmented } from "../Segmented";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { buildFrequencyDistribution } from "../../lib/data";
@@ -41,7 +42,8 @@ interface OverviewChartProps {
   metric: string;
 }
 
-interface RankingChartProps extends OverviewChartProps {
+interface CityOverviewProps {
+  filePrefix: string;
   manifest: Manifest;
   shard: DatasetShard;
   descriptor: DatasetDescriptor;
@@ -51,101 +53,16 @@ interface RankingChartProps extends OverviewChartProps {
   onViewCity: (city: string) => void;
 }
 
-export function RankingChart({ data, filePrefix, metric, manifest, shard, descriptor, period, view, onViewChange, onViewCity }: RankingChartProps) {
-  const isMobile = useMediaQuery("(max-width: 767px)");
+export function CityOverview({ filePrefix, manifest, shard, descriptor, period, view, onViewChange, onViewCity }: CityOverviewProps) {
   const [tier, setTier] = useState<TierFilter>("全部");
-  const tableRows = useMemo(() => view === "data"
-    ? buildObservations(manifest, shard, [period]).filter((row) => tier === "全部" || row.tier === tier)
-    : [], [manifest, period, shard, tier, view]);
-  const visible = useMemo(
-    () => (tier === "全部" ? data : data.filter((datum) => datum.tier === tier)),
-    [data, tier],
-  );
-  const maximum = Math.max(...data.map((datum) => Math.abs(datum.change)), 0.1);
-  const windowSize = Math.min(visible.length, isMobile ? 10 : 30);
-  const option = useMemo<EChartsCoreOption>(() => ({
-    animationDuration: 350,
-    aria: { enabled: true, description: "按价格变动从高到低排列的城市柱状图" },
-    grid: { left: isMobile ? 52 : 64, right: 18, top: 30, bottom: isMobile ? 96 : 118 },
-    tooltip: {
-      trigger: "item",
-      borderColor: "#d0d5dd",
-      formatter: (raw: unknown) => {
-        const params = raw as { dataIndex: number };
-        const datum = visible[params.dataIndex];
-        return datum
-          ? `当前排名 ${params.dataIndex + 1}<br/>全市排名 ${datum.rank}<br/>${datum.city}（${datum.tier}）<br/>指数 ${datum.value.toFixed(1)}<br/>变动 ${formatPct(datum.change)}`
-          : "";
-      },
-    },
-    xAxis: {
-      type: "category",
-      data: visible.map((datum) => datum.city),
-      axisLine: { lineStyle: axisLineStyle },
-      axisTick: { show: false },
-      axisLabel: { ...axisLabelStyle, interval: 0, rotate: 38, margin: 16 },
-    },
-    yAxis: {
-      type: "value",
-      min: paddedAxisMinimum,
-      max: paddedAxisMaximum,
-      axisLabel: { ...axisLabelStyle, formatter: (value: number) => `${value.toFixed(1)}%` },
-      splitLine: { lineStyle: splitLineStyle },
-      name: metricAxisName(metric),
-      nameLocation: "middle",
-      nameGap: isMobile ? 42 : 48,
-      nameTextStyle: axisLabelStyle,
-    },
-    dataZoom: visible.length > windowSize ? [{
-      type: "slider",
-      startValue: 0,
-      endValue: windowSize - 1,
-      minValueSpan: 4,
-      height: isMobile ? 28 : 30,
-      bottom: 14,
-      borderColor: "#7aa7e8",
-      borderWidth: 2,
-      backgroundColor: "#f8fafc",
-      fillerColor: "rgba(37, 99, 235, 0.18)",
-      dataBackground: { lineStyle: { color: "#cbd5e1" }, areaStyle: { color: "#e5e7eb" } },
-      selectedDataBackground: { lineStyle: { color: COLORS.selection, width: 2 }, areaStyle: { color: "#93b4e8" } },
-      handleSize: "115%",
-      handleStyle: { color: "#ffffff", borderColor: COLORS.selection, borderWidth: 2 },
-      moveHandleSize: 8,
-      moveHandleStyle: { color: COLORS.selection, opacity: 0.75 },
-      brushSelect: false,
-      showDetail: false,
-    }] : [],
-    series: [{
-      type: "bar",
-      barMaxWidth: 28,
-      data: visible.map((datum) => ({
-        value: datum.change,
-        itemStyle: { color: changeColor(datum.change, maximum) },
-        label: { position: datum.change < 0 ? "bottom" : "top", distance: 4 },
-      })),
-      label: {
-        show: true,
-        position: "outside",
-        color: COLORS.muted,
-        fontSize: isMobile ? 8 : 9,
-        formatter: (raw: unknown) => formatPct(Number((raw as { value: number }).value)),
-      },
-      markLine: {
-        silent: true,
-        symbol: "none",
-        lineStyle: { color: COLORS.baseline, width: 1 },
-        label: { show: false },
-        data: [{ yAxis: 0 }],
-      },
-    }],
-  }), [isMobile, maximum, metric, visible, windowSize]);
+  const rows = useMemo(() => buildObservations(manifest, shard, [period])
+    .filter((row) => tier === "全部" || row.tier === tier), [manifest, period, shard, tier]);
 
   return (
-    <div className="chart-block ranking-chart">
+    <div className="chart-block city-overview">
       <div className="chart-heading-row data-chart-heading">
-        <h3>城市排名</h3>
-        <DataViewToggle value={view} onChange={onViewChange} label="城市排名显示方式" />
+        <h3>城市涨跌</h3>
+        <DataViewToggle value={view} onChange={onViewChange} label="城市涨跌显示方式" matrix />
         <div className="data-chart-filter">
           <Segmented
             label="城市层级"
@@ -158,18 +75,12 @@ export function RankingChart({ data, filePrefix, metric, manifest, shard, descri
       {view === "data" ? (
         <ObservationTable
           key={`${descriptor.id}-${period}-${tier}`}
-          rows={tableRows}
+          rows={rows}
           descriptor={descriptor}
           onViewCity={onViewCity}
         />
       ) : (
-        <EChart
-          option={option}
-          height={isMobile ? 500 : 555}
-          ariaLabel="城市价格变动排名"
-          fileName={`${filePrefix}-城市排名`}
-          showReset={!isMobile}
-        />
+        <CityChangeMatrix rows={rows} metric={descriptor.metric} filePrefix={filePrefix} onViewCity={onViewCity} />
       )}
     </div>
   );

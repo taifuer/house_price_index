@@ -50,7 +50,11 @@ export function cityDataForPeriod(
     return [{ city: city.name, tier: city.tier, value, change: roundOne(value - 100), rank: 0 }];
   });
   data.sort((left, right) => right.change - left.change || left.city.localeCompare(right.city, "zh-CN"));
-  return data.map((datum, index) => ({ ...datum, rank: index + 1 }));
+  return data.map((datum, index) => {
+    datum.rank = index > 0 && datum.change === data[index - 1]!.change
+      ? data[index - 1]!.rank : index + 1;
+    return datum;
+  });
 }
 
 export function buildOverallTrend(manifest: Manifest, shard: DatasetShard): OverallTrendDatum[] {

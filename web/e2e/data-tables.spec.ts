@@ -3,16 +3,17 @@ import type { DatasetShard, Manifest } from "../src/types";
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/?view=resale-all-mom&period=2026-08");
-  await expect(page.locator(".ranking-chart .chart-canvas svg")).toBeVisible();
+  await expect(page.locator(".city-overview .city-matrix-cell")).toHaveCount(70);
 });
 
 test("monthly data shows all cities without search, pagination or download and supports sorting", async ({ page }, testInfo) => {
   await expect(page).toHaveTitle("全国 70 城房价指数");
   await expect(page.locator(".app-title")).toHaveText("全国 70 城房价指数");
-  const ranking = page.locator(".ranking-chart");
+  const ranking = page.locator(".city-overview");
   for (const toggle of [ranking.locator(".data-view-toggle"), page.locator(".city-trend-chart .data-view-toggle")]) {
     await expect(toggle.getByRole("button")).toHaveText(["图", "表"]);
-    await expect(toggle.getByRole("button", { name: "统计图", exact: true })).toHaveAttribute("title", "统计图");
+    const chartLabel = "统计图";
+    await expect(toggle.getByRole("button", { name: chartLabel, exact: true })).toHaveAttribute("title", chartLabel);
     await expect(toggle.getByRole("button", { name: "数据表", exact: true })).toHaveAttribute("title", "数据表");
     const dimensions = await toggle.getByRole("button").evaluateAll((buttons) => buttons.map((button) => {
       const { width, height } = button.getBoundingClientRect();
@@ -29,7 +30,7 @@ test("monthly data shows all cities without search, pagination or download and s
     }));
     for (const button of dimensions) {
       expect(button.style).toEqual(button.filterStyle);
-      expect(button.width).toBeLessThan(testInfo.project.name === "mobile" ? 56 : 64);
+      expect(button.width).toBeLessThan(testInfo.project.name === "mobile" ? 64 : 76);
       expect(button.height).toBe(testInfo.project.name === "mobile" ? 32 : 34);
       expect(button.overflows).toBe(false);
     }
@@ -78,11 +79,11 @@ test("monthly data shows all cities without search, pagination or download and s
   await ranking.evaluate((element) => window.scrollTo({ top: element.getBoundingClientRect().top + scrollY - 70, behavior: "instant" }));
   await page.screenshot({ path: `/tmp/house-data-ranking-${testInfo.project.name}.png` });
   await ranking.getByRole("button", { name: "统计图", exact: true }).click();
-  await expect(ranking.locator(".chart-canvas svg")).toBeVisible();
+  await expect(ranking.locator(".city-matrix-cell")).toHaveCount(70);
 });
 
 test("monthly table preserves data mode when housing type and month change", async ({ page }) => {
-  const ranking = page.locator(".ranking-chart");
+  const ranking = page.locator(".city-overview");
   await ranking.getByRole("button", { name: "数据表", exact: true }).click();
   await page.locator(".filter-toggle").click();
   await page.locator(".filter-list label").nth(1).locator("select").selectOption({ label: "新建商品住宅" });
@@ -105,7 +106,7 @@ test("monthly table preserves data mode when housing type and month change", asy
 test("city link opens collapsed trends, selects one city and exposes its history", async ({ page }, testInfo) => {
   const trendSection = page.locator(".collapsible-section").nth(1);
   await trendSection.locator(".section-toggle").click();
-  const ranking = page.locator(".ranking-chart");
+  const ranking = page.locator(".city-overview");
   await ranking.getByRole("button", { name: "数据表", exact: true }).click();
   const cityLink = ranking.getByRole("button", { name: "查看北京走势", exact: true });
   await expect(cityLink).toHaveText("北京");
@@ -182,7 +183,7 @@ test("tables fit all columns without horizontal scrolling and keep headers fixed
   const widths = testInfo.project.name === "mobile" ? [320, 360, 390, 430, 768] : [320, 768, 1440];
   for (const width of widths) {
     await page.setViewportSize({ width, height: 844 });
-    for (const selector of [".ranking-chart", ".city-trend-chart"]) {
+    for (const selector of [".city-overview", ".city-trend-chart"]) {
       const chart = page.locator(selector);
       await chart.getByRole("button", { name: "数据表", exact: true }).click();
       const scroll = chart.locator(".data-table-scroll");
@@ -230,7 +231,7 @@ test("full-width tables balance every column and keep long labels readable", asy
   const widths = testInfo.project.name === "mobile" ? [320, 360, 390, 430, 768] : [320, 1024, 1440, 1920];
   for (const width of widths) {
     await page.setViewportSize({ width, height: 844 });
-    for (const selector of [".ranking-chart", ".city-trend-chart"]) {
+    for (const selector of [".city-overview", ".city-trend-chart"]) {
       const chart = page.locator(selector);
       await chart.getByRole("button", { name: "数据表", exact: true }).click();
       const scroll = chart.locator(".data-table-scroll");
@@ -262,7 +263,7 @@ test("full-width tables balance every column and keep long labels readable", asy
       expect(Math.abs(layout.width - (await chart.boundingBox())!.width)).toBeLessThanOrEqual(1);
       if (width >= 768) {
         for (const share of layout.columnShares) {
-          if (selector === ".ranking-chart") {
+          if (selector === ".city-overview") {
             expect(share).toBeCloseTo(0.25, 2);
           } else {
             expect(share).toBeGreaterThanOrEqual(0.15);
@@ -300,7 +301,7 @@ test("full-history rows stay in a bounded table and scrolling can continue to th
   await expect(city.locator("tbody tr").last()).toContainText(descriptor.periods[0]!);
   await expect(city.locator("tbody tr").last()).toBeInViewport();
 
-  const ranking = page.locator(".ranking-chart");
+  const ranking = page.locator(".city-overview");
   await ranking.getByRole("button", { name: "数据表", exact: true }).click();
   const monthlyScroll = ranking.locator(".data-table-scroll");
   await ranking.evaluate((element) => window.scrollTo({ top: element.getBoundingClientRect().top + scrollY - 70, behavior: "instant" }));
