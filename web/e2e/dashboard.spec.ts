@@ -121,7 +121,7 @@ test("renders the July 2026 dashboard without horizontal overflow", async ({ pag
   await expect(page.locator(".dashboard-section")).toHaveCount(1);
   await expect(page.locator(".footer-copyright")).toHaveText(`© ${new Date().getFullYear()} House Price Index`);
   await expect(page.locator(".footer-copyright")).toHaveCSS("white-space", "nowrap");
-  await expect(page.locator(".app-footer")).toHaveCSS("font-size", "13px");
+  await expect(page.locator(".app-footer")).toHaveCSS("font-size", testInfo.project.name === "mobile" ? "12px" : "13px");
   const footerCenterOffset = await page.locator(".app-footer").evaluate((footer) => {
     const footerRect = footer.getBoundingClientRect();
     const contentRects = [...footer.children].map((element) => element.getBoundingClientRect()).filter((rect) => rect.width > 0);
@@ -241,7 +241,7 @@ test("keeps full-history year labels separated on narrow mobile charts", async (
   for (const item of cases) {
     await page.goto(`/?section=cities&view=${item.view}&period=2026-07`);
     const cityTrend = page.locator(".city-trend-chart");
-    await cityTrend.getByRole("button", { name: "全部", exact: true }).click();
+    await page.locator(".city-history-controls").getByRole("button", { name: "全部", exact: true }).click();
     await expectMobileYearLabels(cityTrend, item.firstYear);
 
     await page.getByRole("navigation").getByRole("link", { name: "历史趋势" }).click();
@@ -349,6 +349,11 @@ test("chart download and fullscreen controls work", async ({ page }, testInfo) =
   if (testInfo.project.name === "mobile") {
     await expect(downloadButton).toHaveCount(0);
     await expect(fullscreenButton).toHaveCount(0);
+    const mobileDownload = page.locator(".compact-chart").first().getByRole("button", { name: "下载图表" });
+    await expect(mobileDownload).toBeVisible();
+    const pending = page.waitForEvent("download");
+    await mobileDownload.click();
+    expect((await pending).suggestedFilename()).toMatch(/首尾城市对比\.png$/);
     return;
   }
 
@@ -384,15 +389,15 @@ test("persists trend controls and scopes missing-data notes to the visible range
   await overallTrend.getByRole("button", { name: "近5年", exact: true }).click();
   await expect(overallTrend.locator(".trend-note")).toHaveCount(0);
   await page.getByRole("navigation").getByRole("link", { name: "城市看板" }).click();
-  await expect(cityTrend.getByRole("button", { name: "近5年", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await cityTrend.getByRole("button", { name: "近3年", exact: true }).click();
+  await expect(page.locator(".city-history-controls").getByRole("button", { name: "近5年", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.locator(".city-history-controls").getByRole("button", { name: "近3年", exact: true }).click();
   await expect(cityTrend.locator(".trend-note")).toHaveCount(0);
   await expect(page).toHaveURL(/trend=tier/);
   await expect(page).toHaveURL(/range=5y/);
-  await expect(page).toHaveURL(/cityRange=3y/);
+  await expect(page).toHaveURL(/indexStart=2023-08/);
 
   await page.reload();
-  await expect(cityTrend.getByRole("button", { name: "近3年", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".city-history-controls").getByRole("button", { name: "近3年", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("navigation").getByRole("link", { name: "历史趋势" }).click();
   await expect(overallTrend.getByRole("button", { name: "分层", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(overallTrend.getByRole("button", { name: "近5年", exact: true })).toHaveAttribute("aria-pressed", "true");
@@ -536,38 +541,44 @@ test("tier trend and city selection render client-side", async ({ page }, testIn
   await expect(defaultCityTrend.locator(".chart-canvas svg")).toBeVisible();
   await defaultCityTrend.screenshot({ path: `/tmp/house-v4-city-trend-default-${testInfo.project.name}.png` });
 
-  const cityPicker = page.locator(".city-trend-chart .city-picker");
+  const cityPicker = page.locator(".city-history-controls .city-picker");
   await cityPicker.getByRole("button", { name: "选择城市" }).click();
   await expect(cityPicker.locator(".city-option-group-title")).toHaveText(["一线（4）", "二线（31）", "三线（35）"]);
   await page.screenshot({ path: `/tmp/house-v4-city-picker-${testInfo.project.name}.png`, fullPage: false });
   await cityPicker.getByPlaceholder("搜索城市").fill("南京");
   await expect(cityPicker.locator(".city-option-group-title")).toHaveText(["二线（1/31）"]);
   await cityPicker.getByRole("button", { name: "南京", exact: true }).click();
-  for (const city of ["上海", "广州", "深圳", "天津", "重庆", "成都", "杭州", "武汉"]) {
+  for (const city of ["上海", "广州", "深圳"]) {
     await cityPicker.getByPlaceholder("搜索城市").fill(city);
     await cityPicker.getByRole("button", { name: city, exact: true }).click();
   }
-  await expect(cityPicker.locator(".city-tag")).toHaveCount(10);
-  await expect(cityPicker.locator(".city-picker-hint")).toHaveText("最多选择 10 个城市");
+  await expect(cityPicker.locator(".city-tag-name")).toHaveCount(5);
+  await expect(cityPicker.locator(".city-picker-hint")).toHaveText("最多选择 5 个城市");
   await cityPicker.getByPlaceholder("搜索城市").fill("西安");
   await expect(cityPicker.getByRole("button", { name: "西安", exact: true })).toBeDisabled();
   await cityPicker.getByRole("button", { name: "选择城市" }).click();
 
   const cityTrend = page.locator(".city-trend-chart");
-  await expect(cityTrend.getByRole("button", { name: "近5年", exact: true })).toHaveAttribute("aria-pressed", "true");
-  const cityCanvasBox = await cityTrend.locator(".chart-canvas").boundingBox();
-  const cityLegendBox = await cityTrend.locator(".chart-canvas svg text").filter({ hasText: /^北京$/ }).boundingBox();
+  await expect(page.locator(".city-history-controls").getByRole("button", { name: "近5年", exact: true })).toHaveAttribute("aria-pressed", "true");
+  // Read relative geometry in one task so ongoing mobile scrolling cannot skew the gap.
+  const { canvas: cityCanvasBox, legend: cityLegendBox, year: yearBox } = await cityTrend.evaluate((element) => {
+    const labels = [...element.querySelectorAll(".chart-canvas svg text")];
+    return {
+      canvas: element.querySelector(".chart-canvas")?.getBoundingClientRect().toJSON(),
+      legend: labels.find((label) => label.textContent === "北京")?.getBoundingClientRect().toJSON(),
+      year: labels.find((label) => label.textContent === "2026年")?.getBoundingClientRect().toJSON(),
+    };
+  });
   expect(cityCanvasBox).not.toBeNull();
   expect(cityLegendBox).not.toBeNull();
   expect(cityLegendBox!.y).toBeGreaterThan(cityCanvasBox!.y + cityCanvasBox!.height * 0.88);
   if (testInfo.project.name === "mobile") {
-    const yearBox = await cityTrend.locator(".chart-canvas svg text").filter({ hasText: /^2026年$/ }).boundingBox();
     expect(yearBox).not.toBeNull();
     const gap = cityLegendBox!.y - (yearBox!.y + yearBox!.height);
     expect(gap).toBeGreaterThanOrEqual(8);
     expect(gap).toBeLessThanOrEqual(30);
   }
-  await cityTrend.screenshot({ path: `/tmp/house-v4-city-trend-10-${testInfo.project.name}.png` });
+  await cityTrend.screenshot({ path: `/tmp/house-v4-city-trend-5-${testInfo.project.name}.png` });
 
   if (testInfo.project.name === "desktop") {
     await page.getByRole("navigation").getByRole("link", { name: "历史趋势" }).click();

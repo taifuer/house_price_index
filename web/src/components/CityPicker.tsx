@@ -11,9 +11,10 @@ interface CityPickerProps {
   maxSelected?: number;
   label?: string;
   colors?: ReadonlyMap<string, string>;
+  primaryCity?: string;
 }
 
-export function CityPicker({ cities, selected, onChange, maxSelected = 8, label = "城市选择", colors }: CityPickerProps) {
+export function CityPicker({ cities, selected, onChange, maxSelected = 8, label = "城市选择", colors, primaryCity }: CityPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
@@ -45,6 +46,7 @@ export function CityPicker({ cities, selected, onChange, maxSelected = 8, label 
   }, []);
 
   const toggle = (city: string) => {
+    if (city === primaryCity) return;
     if (selected.includes(city)) {
       onChange(selected.filter((item) => item !== city));
     } else if (selected.length < maxSelected) {
@@ -66,10 +68,10 @@ export function CityPicker({ cities, selected, onChange, maxSelected = 8, label 
           {selected.map((city) => (
             <span className="city-tag" key={city}>
               {colors?.has(city) && <span className="city-color-swatch" style={{ backgroundColor: colors.get(city) }} aria-hidden="true" />}
-              {city}
-              <button type="button" onClick={() => toggle(city)} title={`移除${city}`} aria-label={`移除${city}`}>
+              <span className="city-tag-name">{city}</span>
+              {city === primaryCity ? <span className="city-primary-label">主城市</span> : <button type="button" onClick={() => toggle(city)} title={`移除${city}`} aria-label={`移除${city}`}>
                 <X size={13} />
-              </button>
+              </button>}
             </span>
           ))}
           {selected.length === 0 && <span className="city-placeholder">请选择城市</span>}
@@ -96,7 +98,7 @@ export function CityPicker({ cities, selected, onChange, maxSelected = 8, label 
                 <div className="city-option-grid">
                   {group.cities.map((city) => {
                     const checked = selected.includes(city.name);
-                    const disabled = !checked && selected.length >= maxSelected;
+                    const disabled = city.name === primaryCity || (!checked && selected.length >= maxSelected);
                     return (
                       <button key={city.name} type="button" aria-pressed={checked} disabled={disabled} onClick={() => toggle(city.name)}>
                         <span className={`city-check${checked ? " is-checked" : ""}`}>

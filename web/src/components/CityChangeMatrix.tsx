@@ -1,38 +1,30 @@
-import { useRef, useState } from "react";
-import { Download } from "lucide-react";
-
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { CITY_TIERS, heatmapColor, heatmapLegendLabels, heatmapLimit } from "../lib/cityHeatmap";
 import { formatPct } from "../lib/format";
 import type { Observation } from "../lib/observations";
 import { HeatmapLegend } from "./HeatmapLegend";
+import { ChartDownloadButton, useChartExportRenderer } from "./ChartPanel";
 
 interface CityChangeMatrixProps {
   rows: Observation[];
   metric: string;
-  filePrefix: string;
   onViewCity: (city: string) => void;
 }
 
-export function CityChangeMatrix({ rows, metric, filePrefix, onViewCity }: CityChangeMatrixProps) {
+export function CityChangeMatrix({ rows, metric, onViewCity }: CityChangeMatrixProps) {
   const isMobile = useMediaQuery("(max-width: 767px)");
-  const matrixRef = useRef<HTMLDivElement>(null);
-  const [downloadError, setDownloadError] = useState(false);
   const groups = CITY_TIERS.map((tier) => ({ tier, cities: rows.filter((row) => row.tier === tier) }))
     .filter((group) => group.cities.length);
 
-  const download = async () => {
-    setDownloadError(false);
+  useChartExportRenderer(async () => {
+    const canvas = document.createElement("canvas");
     try {
       await document.fonts.ready;
-      const grid = matrixRef.current?.querySelector(".city-matrix-grid");
-      if (!grid) return;
-      const columns = getComputedStyle(grid).gridTemplateColumns.split(" ").length;
-      const width = 1200;
+      const columns = 8;
+      const width = 960;
       const gap = 6;
       const cellWidth = (width - 48 - gap * (columns - 1)) / columns;
-      const height = 118 + groups.reduce((sum, group) => sum + 38 + Math.ceil(group.cities.length / columns) * 62, 0);
-      const canvas = document.createElement("canvas");
+      const height = 46 + groups.reduce((sum, group) => sum + 38 + Math.ceil(group.cities.length / columns) * 62, 0);
       canvas.width = width * 2;
       canvas.height = height * 2;
       const context = canvas.getContext("2d");
@@ -40,12 +32,7 @@ export function CityChangeMatrix({ rows, metric, filePrefix, onViewCity }: CityC
       context.scale(2, 2);
       context.fillStyle = "#ffffff";
       context.fillRect(0, 0, width, height);
-      context.fillStyle = "#111827";
-      context.font = "600 20px sans-serif";
-      context.fillText("城市涨跌", 24, 32);
-      context.font = "13px sans-serif";
-      context.fillText(filePrefix, 24, 56);
-      let y = 72;
+      let y = 0;
       for (const group of groups) {
         context.fillStyle = "#475467";
         context.font = "600 14px sans-serif";
@@ -86,24 +73,18 @@ export function CityChangeMatrix({ rows, metric, filePrefix, onViewCity }: CityC
       });
       context.textAlign = "left";
       context.fillText("— 缺失", 270, y + 29);
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-      if (!blob) throw new Error("PNG unavailable");
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${filePrefix}-城市涨跌.png`;
-      link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch {
-      setDownloadError(true);
+      return { source: canvas, width, height };
+    } catch (error) {
+      canvas.width = canvas.height = 0;
+      throw error;
     }
-  };
+  });
 
   return (
-    <div className="city-matrix" ref={matrixRef}>
+    <div className="city-matrix">
       {!isMobile && (
         <div className="chart-actions" aria-label="图表操作">
-          <button type="button" className="matrix-download" title="下载图表" aria-label="下载图表" onClick={() => void download()}><Download size={16} /></button>
+          <ChartDownloadButton className="matrix-download" />
         </div>
       )}
       {groups.map(({ tier, cities }) => (
@@ -129,7 +110,6 @@ export function CityChangeMatrix({ rows, metric, filePrefix, onViewCity }: CityC
       <div className="city-matrix-footer">
         <HeatmapLegend metric={metric} />
       </div>
-      {downloadError && <p role="alert" className="trend-note">图表下载失败，请重试。</p>}
     </div>
   );
 }

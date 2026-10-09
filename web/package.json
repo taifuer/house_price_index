@@ -7,6 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
+    "demo": "node scripts/capture-demo.mjs",
     "test": "vitest run"
   },
   "dependencies": {

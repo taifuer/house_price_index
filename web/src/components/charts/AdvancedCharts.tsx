@@ -5,12 +5,13 @@ import * as echarts from "echarts/core";
 import type { EChartsCoreOption } from "echarts/core";
 
 import { EChart } from "../EChart";
+import { ChartPanel } from "../ChartPanel";
 import { Segmented } from "../Segmented";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { COLORS, axisLabelStyle, splitLineStyle, symmetricScale } from "../../lib/chartTheme";
 import { HEATMAP_PALETTE, heatmapColor, heatmapHeight, heatmapLegendLabels, heatmapLimit } from "../../lib/cityHeatmap";
 import { loadShard } from "../../lib/data";
-import { completeMonths, formatMetric, formatPct, formatPeriod, roundOne } from "../../lib/format";
+import { completeMonths, formatMetric, formatPct, formatPeriod, formatSizeBand, roundOne } from "../../lib/format";
 import type { CityTier, DatasetDescriptor, DatasetShard, Manifest, TierFilter, TrendRange } from "../../types";
 
 echarts.use([EChartsHeatmapChart, GraphicComponent, MarkAreaComponent, VisualMapComponent]);
@@ -187,8 +188,10 @@ function HeatmapChart({ manifest, descriptor, shard, period, filePrefix, range, 
   }), [cityIndexes, descriptor.metric, gridBottom, isMobile, legendLabels, legendWidth, maximum, monthAxis, range, rowsByPeriod, scopedPeriods, showPeriodZoom, visibleCities]);
 
   return (
-    <div className="chart-block heatmap-chart">
-      <h3 className="analysis-chart-title">城市趋势</h3>
+    <ChartPanel className="heatmap-chart" title="城市趋势"
+      subtitle={`${descriptor.houseType} · ${descriptor.sizeBand === "全部" ? "全部面积" : formatSizeBand(descriptor.sizeBand)} · ${formatMetric(descriptor.metric)} · ${tier === "全部" ? "全部层级" : tier} · ${scopedPeriods[0]} - ${scopedPeriods.at(-1)}`}
+      fileName={`${filePrefix}-城市月份热力图`}
+      notes={missingMonths ? [`当前范围有 ${missingMonths} 个月份存在缺失；斜线格表示缺失数据，不计作持平。`] : []}>
       <div className="paired-chart-controls">
         <div className="paired-chart-control analysis-filter-control">
           <Segmented
@@ -214,12 +217,11 @@ function HeatmapChart({ manifest, descriptor, shard, period, filePrefix, range, 
         option={option}
         height={heatmapHeight(visibleCities.length, isMobile)}
         ariaLabel="城市月份涨跌幅热力图"
-        fileName={`${filePrefix}-城市月份热力图`}
         showReset={!isMobile && showPeriodZoom}
         className="heatmap-chart-shell"
       />
       {missingMonths > 0 && <p className="trend-note">当前范围有 {missingMonths} 个月份存在缺失；斜线格表示缺失数据，不计作持平。</p>}
-    </div>
+    </ChartPanel>
   );
 }
 
@@ -244,7 +246,7 @@ const TIER_SYMBOLS: Record<CityTier, "diamond" | "circle" | "rect"> = {
   三线: "rect",
 };
 
-function MomentumQuadrantChart({ manifest, momShard, yoyShard, period, filePrefix }: QuadrantChartProps) {
+function MomentumQuadrantChart({ manifest, descriptor, momShard, yoyShard, period, filePrefix }: QuadrantChartProps) {
   const isMobile = useMediaQuery("(max-width: 767px)");
   const momIndex = momShard.periods.indexOf(period);
   const yoyIndex = yoyShard.periods.indexOf(period);
@@ -383,11 +385,13 @@ function MomentumQuadrantChart({ manifest, momShard, yoyShard, period, filePrefi
   }), [groupedPoints, isMobile, period, points, tiers, xInterval, xMaximum, xMinimum, yInterval, yMaximum, yMinimum]);
 
   return (
-    <div className="chart-block quadrant-chart">
-      <h3 className="analysis-chart-title">城市环比与同比</h3>
-      <EChart option={option} height={isMobile ? 540 : 500} ariaLabel="当前月份各城市环比与同比分布" fileName={`${filePrefix}-城市环比与同比`} />
+    <ChartPanel className="quadrant-chart" title="城市环比与同比"
+      subtitle={`${descriptor.houseType} · ${descriptor.sizeBand === "全部" ? "全部面积" : formatSizeBand(descriptor.sizeBand)} · ${formatPeriod(period)}`}
+      fileName={`${filePrefix}-城市环比与同比`}
+      notes={[`共同覆盖 ${points.length}/${manifest.cities.length} 城；标记大小表示同层级中环比与同比数值均相同的重合城市数。`]}>
+      <EChart option={option} height={isMobile ? 540 : 500} ariaLabel="当前月份各城市环比与同比分布" />
       <p className="analysis-caption">共同覆盖 {points.length}/{manifest.cities.length} 城；标记大小表示同层级中环比与同比数值均相同的重合城市数。</p>
-    </div>
+    </ChartPanel>
   );
 }
 

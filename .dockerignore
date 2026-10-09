@@ -10,6 +10,7 @@ __pycache__
 .env
 *.md
 demo
+docs
 tests
 assets
 scripts
@@ -19,3 +20,5 @@ web/node_modules
 web/dist
 web/test-results
 web/playwright-report
+web/e2e
+web/scripts

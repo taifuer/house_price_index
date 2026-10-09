@@ -30,22 +30,24 @@ test("city trends retain chart controls and the monthly snapshot without table m
   await page.goto("/?section=cities&city=北京&cities=北京,上海&cityRange=3y");
   const trend = page.locator(".city-trend-chart");
   await expect(trend.locator(".chart-canvas svg")).toBeVisible();
-  await expect(trend.locator(".city-tag")).toHaveText(["北京", "上海"]);
+  const controls = page.locator(".city-history-controls");
+  await expect(controls.locator(".city-tag-name")).toHaveText(["北京", "上海"]);
   await expect(page.locator(".city-snapshot-table tbody tr")).toHaveCount(2);
   await expect(page.getByRole("button", { name: "数据表", exact: true })).toHaveCount(0);
   await expect(trend.getByRole("table")).toHaveCount(0);
-  await trend.getByRole("button", { name: "全部", exact: true }).click();
+  await controls.getByRole("button", { name: "全部", exact: true }).click();
   await page.getByRole("combobox", { name: "走势指标", exact: true }).selectOption("累计平均");
   await expect(trend.locator(".trend-note")).toContainText("数据缺失");
   await page.reload();
-  await expect(trend.getByRole("button", { name: "全部", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(controls.getByRole("button", { name: "全部", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(trend.locator(".chart-canvas svg")).toBeVisible();
-  for (const city of ["北京", "上海"]) await trend.getByRole("button", { name: `移除${city}`, exact: true }).click();
-  await expect(trend.locator(".empty-chart")).toHaveText("请选择至少一个城市");
-  await expect(trend.locator(".chart-canvas")).toHaveCount(0);
+  await controls.getByRole("button", { name: "移除上海", exact: true }).click();
+  await expect(controls.getByRole("button", { name: "移除北京", exact: true })).toHaveCount(0);
+  await expect(trend.locator(".chart-canvas")).toHaveCount(1);
+  await expect(page.locator(".city-history-table tbody tr")).toHaveCount(12);
 });
 
-test("dropdowns use consistent typography and keep housing filters under their own headings", async ({ page }, testInfo) => {
+test("dropdowns use consistent typography with one shared historical toolbar", async ({ page }, testInfo) => {
   await page.goto("/?section=cities");
   await expect(page.locator(".city-trend-chart .chart-canvas svg")).toBeVisible();
   for (const width of [320, 390, 768, 1440]) {
@@ -54,23 +56,23 @@ test("dropdowns use consistent typography and keep housing filters under their o
       const style = getComputedStyle(select);
       return [style.fontSize, style.fontWeight, style.lineHeight, style.height, style.borderRadius, style.padding];
     }));
-    expect(styles).toHaveLength(6);
+    expect(styles).toHaveLength(5);
     for (const style of styles) expect(style).toEqual(styles[0]);
     expect(styles[0]!.slice(0, 2)).toEqual(["13px", "400"]);
     expect(styles[0]![3]).toBe("40px");
-    await expect(page.locator(".app-main .segmented")).toHaveCount(2);
+    for (const label of await page.locator(".city-history-filters label > span:first-child").all()) {
+      await expect(label).toHaveCSS("font-size", "13px");
+      await expect(label).toHaveCSS("line-height", "20px");
+    }
+    await expect(page.locator(".app-main .segmented")).toHaveCount(1);
     for (const range of await page.locator(".app-main .segmented").all()) {
       expect((await range.boundingBox())!.height).toBe(40);
     }
-    for (const selector of [".city-trend-chart", ".interval-index-chart"]) {
-      const chart = page.locator(selector);
-      const heading = (await chart.locator(".chart-heading-row").boundingBox())!;
-      const controls = (await chart.locator(".city-series-controls").boundingBox())!;
-      const picker = (await chart.locator(".city-picker").boundingBox())!;
-      expect(controls.y).toBeGreaterThanOrEqual(heading.y + heading.height);
-      expect(controls.y + controls.height).toBeLessThanOrEqual(picker.y);
-      expect(Math.abs(controls.x - heading.x)).toBeLessThanOrEqual(1);
-    }
+    const controls = (await page.locator(".city-history-controls").boundingBox())!;
+    const heading = (await page.locator(".city-trend-chart .chart-heading-row").boundingBox())!;
+    expect(heading.y).toBeGreaterThanOrEqual(controls.y + controls.height);
+    expect(Math.abs(controls.x - heading.x)).toBeLessThanOrEqual(1);
+    await expect(page.locator(".app-main .city-picker")).toHaveCount(1);
     await page.locator(".filter-toggle").click();
     const area = page.locator(".filter-list select");
     await expect(area).toHaveCSS("font-size", "13px");
@@ -88,7 +90,7 @@ test("all task views share the same control height at narrow and desktop widths"
   await page.goto("/");
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
-    for (const [section, count] of [["月度概览", 1], ["历史趋势", 4], ["城市看板", 2]] as const) {
+    for (const [section, count] of [["月度概览", 1], ["历史趋势", 4], ["城市看板", 1]] as const) {
       await page.getByRole("navigation").getByRole("link", { name: section, exact: true }).click();
       await expect(page.locator(".app-main .segmented")).toHaveCount(count);
       const controls = await page.locator(".app-main .segmented, .app-main .filter-select select").evaluateAll((elements) => elements.map((element) => ({
@@ -103,7 +105,43 @@ test("all task views share the same control height at narrow and desktop widths"
         button.scrollWidth > button.clientWidth + 1 || button.scrollHeight > button.clientHeight + 1,
       ).map((button) => button.textContent));
       expect(clippedLabels).toEqual([]);
+      const controlFonts = await page.locator(".app-main .segmented button, .app-main .filter-select select").evaluateAll((elements) =>
+        elements.map((element) => [getComputedStyle(element).fontSize, getComputedStyle(element).lineHeight]),
+      );
+      expect(controlFonts.every(([size, height]) => size === "13px" && height === "20px")).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+    }
+  }
+});
+
+test("page and chart headings keep a shared readable hierarchy across all views", async ({ page }, testInfo) => {
+  await page.goto("/?period=2026-08&city=乌鲁木齐");
+  for (const width of [320, 390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const section of ["月度概览", "历史趋势", "城市看板"]) {
+      await page.getByRole("navigation").getByRole("link", { name: section, exact: true }).click();
+      await expect(page.locator(".chart-canvas svg").first()).toBeVisible();
+      const title = page.locator(".section-title, .city-page-title");
+      await expect(title).toHaveCSS("font-size", width < 768 ? "18px" : "20px");
+      await expect(title).toHaveCSS("line-height", width < 768 ? "26px" : "28px");
+      await expect(title).toHaveCSS("font-weight", "600");
+      await expect(page.locator(".section-heading")).toHaveCSS("min-height", width < 768 ? "44px" : "48px");
+      const chartTitles = page.locator(".chart-block h3");
+      expect(await chartTitles.count()).toBeGreaterThan(0);
+      for (const heading of await chartTitles.all()) {
+        await expect(heading).toHaveCSS("font-size", "16px");
+        await expect(heading).toHaveCSS("line-height", "24px");
+        await expect(heading).toHaveCSS("font-weight", "600");
+      }
+      const clipped = await page.locator(".app-title, .section-title, .city-page-title, .chart-block h3, .summary-item strong").evaluateAll((elements) =>
+        elements.filter((element) => element.scrollWidth > element.clientWidth + 1 || element.scrollHeight > element.clientHeight + 1).map((element) => element.textContent),
+      );
+      expect(clipped).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+      if (width === 390 || width === 1440) {
+        await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+        await page.screenshot({ path: `/tmp/house-type-${width}-${section}-${testInfo.project.name}.png` });
+      }
     }
   }
 });
@@ -122,11 +160,16 @@ test("footer uses equal separator gaps and centered mobile lines without overflo
     const copyright = (await footer.locator(".footer-copyright").boundingBox())!;
     const source = (await footer.locator(".footer-source").boundingBox())!;
     if (width < 768) {
+      await expect(footer).toHaveCSS("font-size", "12px");
+      await expect(footer).toHaveCSS("line-height", "20px");
+      await expect(footer).toHaveCSS("border-top-width", "0px");
+      await expect(footer).toHaveCSS("position", "static");
       await expect(footer.locator(".footer-separator")).toBeHidden();
       expect(Math.abs(copyright.x + copyright.width / 2 - width / 2)).toBeLessThanOrEqual(1);
       expect(Math.abs(source.x + source.width / 2 - width / 2)).toBeLessThanOrEqual(1);
       expect(source.y).toBeGreaterThanOrEqual(copyright.y + copyright.height);
     } else {
+      await expect(footer).toHaveCSS("font-size", "13px");
       const separator = (await footer.locator(".footer-separator").boundingBox())!;
       expect(separator.x - copyright.x - copyright.width).toBeCloseTo(8, 1);
       expect(source.x - separator.x - separator.width).toBeCloseTo(8, 1);

@@ -1,41 +1,23 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { ExternalLink } from "lucide-react";
-import { loadShard } from "../lib/data";
 import { citySnapshotPeriods } from "../lib/dashboardState";
 import { formatMetric, formatPct, formatPeriod } from "../lib/format";
 import { FilterSelect } from "./FilterSelect";
-import type { DatasetShard, Manifest } from "../types";
+import type { DatasetDescriptor, DatasetShard, Manifest } from "../types";
 
 interface CitySnapshotProps {
   manifest: Manifest;
   city: string;
   period: string;
   sizeBand: string;
+  descriptors: DatasetDescriptor[];
+  loaded: Record<string, DatasetShard>;
+  failures: string[];
   onPeriodChange: (period: string) => void;
   onViewSeries: (datasetId: string) => void;
 }
 
-export function CitySnapshot({ manifest, city, period, sizeBand, onViewSeries, onPeriodChange }: CitySnapshotProps) {
-  const descriptors = useMemo(() => manifest.datasets.filter((dataset) => dataset.sizeBand === sizeBand), [manifest, sizeBand]);
-  const [loaded, setLoaded] = useState<Record<string, DatasetShard>>({});
-  const [failures, setFailures] = useState<string[]>([]);
-  useEffect(() => {
-    let active = true;
-    setFailures([]);
-    // Fetch only the current area band; the shared shard cache also serves both city charts.
-    void (async () => {
-      for (const descriptor of descriptors) {
-        if (!active) break;
-        try {
-          const shard = await loadShard(descriptor);
-          if (active) setLoaded((current) => ({ ...current, [descriptor.id]: shard }));
-        } catch {
-          if (active) setFailures((current) => [...current, descriptor.id]);
-        }
-      }
-    })();
-    return () => { active = false; };
-  }, [descriptors]);
+export function CitySnapshot({ manifest, city, period, sizeBand, descriptors, loaded, failures, onViewSeries, onPeriodChange }: CitySnapshotProps) {
   const cityIndex = manifest.cities.findIndex((item) => item.name === city);
   const sources = [...new Set(descriptors.flatMap((descriptor) => {
     const shard = loaded[descriptor.id];

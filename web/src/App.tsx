@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { AppHeader } from "./components/AppHeader";
 import { CitySearch } from "./components/CitySearch";
@@ -6,7 +6,7 @@ import { FilterDrawer } from "./components/FilterDrawer";
 import type { FilterSelection } from "./components/FilterDrawer";
 import { ScrollJump } from "./components/ScrollJump";
 import { datasetForSelection, loadManifest, loadShard } from "./lib/data";
-import { citySnapshotPeriods, dashboardSearch, readDashboardState, type DashboardState } from "./lib/dashboardState";
+import { citySnapshotPeriods, dashboardSearch, readDashboardState, updateDashboardState, type DashboardState } from "./lib/dashboardState";
 import type { DashboardSection, DatasetShard, Manifest } from "./types";
 
 const DashboardContent = lazy(() => import("./components/DashboardContent"));
@@ -21,7 +21,7 @@ interface LoadedShard {
 function Dashboard({ manifest }: { manifest: Manifest }) {
   const [state, setState] = useState(() => readDashboardState(manifest, window.location.search));
   const { section, datasetId, period, trendMode, overallRange } = state;
-  const updateState = (next: Partial<DashboardState>) => setState((current) => ({ ...current, ...next }));
+  const updateState = (next: Partial<DashboardState>) => setState((current) => updateDashboardState(manifest, current, next));
   const defaultDataset = useMemo(
     () => manifest.datasets.find((dataset) => dataset.id === manifest.defaultDataset) ?? manifest.datasets[0]!,
     [manifest],
@@ -34,6 +34,10 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [focusCityRequest, setFocusCityRequest] = useState(0);
+  const scrollPositions = useRef(new Map<string, number>());
+  const scrollKey = section === "cities" ? `${section}:${state.city}` : section;
+  const activeScrollKey = useRef(scrollKey);
+  const restoreScroll = useRef<number | null>(null);
 
   useEffect(() => {
     if (section === "cities") return;
@@ -57,6 +61,7 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
 
   useEffect(() => {
     const restore = () => {
+      scrollPositions.current.set(activeScrollKey.current, window.scrollY);
       setState(readDashboardState(manifest, window.location.search));
       setFilterOpen(false);
       setSearchOpen(false);
@@ -71,12 +76,46 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
   }, [manifest]);
 
   useLayoutEffect(() => {
-    window.scrollTo({ top: 0, behavior: "instant" });
-  }, [section, state.city]);
+    activeScrollKey.current = scrollKey;
+    const target = scrollPositions.current.get(scrollKey) ?? 0;
+    restoreScroll.current = target;
+    const restore = () => {
+      if (restoreScroll.current == null) return;
+      const loading = document.querySelector(".app-main .content-loader, .app-main [aria-busy='true']");
+      if (loading) return;
+      window.scrollTo({ top: target, behavior: "instant" });
+      restoreScroll.current = null;
+      observer.disconnect();
+      mutations.disconnect();
+    };
+    const observer = new ResizeObserver(restore);
+    observer.observe(document.body);
+    const mutations = new MutationObserver(restore);
+    mutations.observe(document.querySelector(".app-main")!, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-busy"] });
+    restore();
+    const interrupt = () => {
+      restoreScroll.current = null;
+      observer.disconnect();
+      mutations.disconnect();
+    };
+    window.addEventListener("wheel", interrupt, { passive: true });
+    window.addEventListener("touchstart", interrupt, { passive: true });
+    window.addEventListener("keydown", interrupt);
+    window.addEventListener("pointerdown", interrupt);
+    return () => {
+      observer.disconnect();
+      mutations.disconnect();
+      window.removeEventListener("wheel", interrupt);
+      window.removeEventListener("touchstart", interrupt);
+      window.removeEventListener("keydown", interrupt);
+      window.removeEventListener("pointerdown", interrupt);
+    };
+  }, [scrollKey]);
 
   const sectionHref = (next: DashboardSection) => `${window.location.pathname}${dashboardSearch(manifest, { ...state, section: next }, window.location.search)}`;
   const navigate = (nextSection: DashboardSection, changes: Partial<DashboardState> = {}) => {
-    const next = { ...state, ...changes, section: nextSection };
+    scrollPositions.current.set(scrollKey, window.scrollY);
+    const next = updateDashboardState(manifest, state, { ...changes, section: nextSection });
     if (nextSection !== section || (nextSection === "cities" && next.city !== state.city)) {
       window.history.pushState(null, "", `${window.location.pathname}${dashboardSearch(manifest, next, window.location.search)}`);
     }
@@ -130,13 +169,15 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
   const shard = loadedShard?.id === descriptor.id ? loadedShard.data : null;
   const openCity = (city: string, context: Partial<DashboardState> = {}) => {
     setSearchOpen(false);
-    navigate("cities", { ...context, city, selectedCities: [city], intervalSelection: { ...state.intervalSelection, cities: [city] } });
+    navigate("cities", { ...context, city, intervalSelection: { ...state.intervalSelection, cities: [city] } });
+    scrollPositions.current.set(`cities:${city}`, 0);
+    window.scrollTo({ top: 0, behavior: "instant" });
     setFocusCityRequest((value) => value + 1);
   };
   const openSearch = () => { setFilterOpen(false); setSearchOpen(true); };
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${filterOpen || searchOpen ? " has-overlay" : ""}`}>
       <CitySearch cities={manifest.cities} open={searchOpen} onClose={() => setSearchOpen(false)} onSelect={openCity} />
       <FilterDrawer
         manifest={manifest}

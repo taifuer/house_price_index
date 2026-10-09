@@ -48,19 +48,20 @@ test("matrix supports keyboard city navigation and preserves the overview on ret
   await expect(overview.locator(".city-matrix-cell")).toHaveCount(4);
 });
 
-test("matrix exports a complete PNG on desktop and hides download on mobile", async ({ page }, testInfo) => {
+test("matrix exports a complete PNG with a title-bar mobile action", async ({ page }, testInfo) => {
   const button = page.locator(".city-overview").getByRole("button", { name: "下载图表" });
-  if (testInfo.project.name === "mobile") {
-    await expect(button).toHaveCount(0);
-    return;
-  }
   const matrix = page.locator(".city-matrix");
-  await matrix.hover();
-  await expect(matrix.locator(".chart-actions")).toHaveCSS("opacity", "1");
-  const matrixBox = (await matrix.boundingBox())!;
-  const buttonBox = (await button.boundingBox())!;
-  expect(buttonBox.y - matrixBox.y).toBeLessThan(12);
-  expect(matrixBox.x + matrixBox.width - buttonBox.x - buttonBox.width).toBeLessThan(12);
+  if (testInfo.project.name === "desktop") {
+    await matrix.hover();
+    await expect(matrix.locator(".chart-actions")).toHaveCSS("opacity", "1");
+    const matrixBox = (await matrix.boundingBox())!;
+    const buttonBox = (await button.boundingBox())!;
+    expect(buttonBox.y - matrixBox.y).toBeLessThan(12);
+    expect(matrixBox.x + matrixBox.width - buttonBox.x - buttonBox.width).toBeLessThan(12);
+  } else {
+    await expect(page.locator(".city-overview .chart-heading-row").getByRole("button", { name: "下载图表" })).toBeVisible();
+    await expect(matrix.locator(".chart-actions")).toHaveCount(0);
+  }
   for (const label of ["一线", "二线", "三线"]) {
     await page.locator(".city-overview").getByRole("button", { name: label, exact: true }).click();
     const action = (await button.boundingBox())!;
@@ -75,7 +76,7 @@ test("matrix exports a complete PNG on desktop and hides download on mobile", as
   const bytes = await readFile((await download.path())!);
   expect([...bytes.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
   expect(bytes.length).toBeGreaterThan(20_000);
-  await download.saveAs("/tmp/house-matrix-export.png");
+  await download.saveAs(`/tmp/house-matrix-export-${testInfo.project.name}.png`);
 });
 
 test("heatmap displays all city rows and the actual selected date range", async ({ page }, testInfo) => {

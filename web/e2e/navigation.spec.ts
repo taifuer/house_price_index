@@ -33,15 +33,15 @@ test("task navigation retains filters, supports history and mounts only the acti
   await page.locator(".overall-trend-chart").getByRole("button", { name: "分层", exact: true }).click();
   await nav.getByRole("link", { name: "城市看板" }).click();
   await expect(page.locator(".heatmap-chart, .city-overview")).toHaveCount(0);
-  await expect(page.locator(".city-trend-chart .city-tag")).toHaveCount(1);
-  await page.locator(".city-trend-chart").getByRole("button", { name: "近3年", exact: true }).click();
+  await expect(page.locator(".city-history-controls .city-tag-name")).toHaveCount(1);
+  await page.locator(".city-history-controls").getByRole("button", { name: "近3年", exact: true }).click();
   await page.goBack();
   await expect(nav.getByRole("link", { name: "历史趋势" })).toHaveAttribute("aria-current", "page");
   await expect(heatmap.getByRole("button", { name: "二线", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(heatmap.getByRole("button", { name: "近5年", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator(".overall-trend-chart").getByRole("button", { name: "分层", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.goForward();
-  await expect(page.locator(".city-trend-chart").getByRole("button", { name: "近3年", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".city-history-controls").getByRole("button", { name: "近3年", exact: true })).toHaveAttribute("aria-pressed", "true");
   await nav.getByRole("link", { name: "月度概览" }).click();
   await expect(page.locator(".city-matrix-cell")).toHaveCount(31);
   await expect(page.locator(".section-title-meta")).toContainText("2026年7月");
@@ -51,7 +51,7 @@ test("task navigation retains filters, supports history and mounts only the acti
   await nav.getByRole("link", { name: "城市看板" }).click();
   await page.reload();
   await expect(nav.getByRole("link", { name: "城市看板" })).toHaveAttribute("aria-current", "page");
-  await expect(page.locator(".city-trend-chart").getByRole("button", { name: "近3年", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".city-history-controls").getByRole("button", { name: "近3年", exact: true })).toHaveAttribute("aria-pressed", "true");
 });
 
 test("navigation fits mobile, tablet and desktop without hiding the title or overlapping content", async ({ page }, testInfo) => {
@@ -62,6 +62,7 @@ test("navigation fits mobile, tablet and desktop without hiding the title or ove
     for (const label of ["月度概览", "历史趋势", "城市看板"]) {
       await nav.getByRole("link", { name: label }).click();
       await expect(page.locator(".dashboard-section")).toBeVisible();
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
       const layout = await page.evaluate(() => {
         const header = document.querySelector(".app-header")!.getBoundingClientRect();
         const content = document.querySelector(".section-heading")!.getBoundingClientRect();
@@ -80,13 +81,15 @@ test("navigation fits mobile, tablet and desktop without hiding the title or ove
         };
       });
       expect(layout.overflow).toBeLessThanOrEqual(1);
-      expect(layout.headerHeight).toBe(width < 768 ? 96 : 64);
+      expect(layout.headerHeight).toBe(width < 768 ? 56 : 64);
       expect(Math.abs(layout.titleToolCenterOffset)).toBeLessThanOrEqual(1);
       expect(layout.titleOverflow).toBeLessThanOrEqual(1);
       expect(layout.contentGap).toBeGreaterThanOrEqual(15);
       if (width < 768) {
+        await expect(nav.getByRole("link").first()).toHaveCSS("font-size", "12px");
         expect(new Set(layout.links.map((link) => link.top)).size).toBe(1);
         expect(layout.links[0]!.top).toBeGreaterThanOrEqual(layout.filterBottom);
+        expect(layout.links[0]!.bottom).toBe(900);
         expect(Math.max(...layout.links.map((link) => link.width)) - Math.min(...layout.links.map((link) => link.width))).toBeLessThan(1);
       }
       if (width === 390 || width === 1440) {

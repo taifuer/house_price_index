@@ -1,176 +1,43 @@
 # 全国 70 城商品住宅价格指数
 
-一个基于国家统计局“70 个大中城市商品住宅销售价格变动情况”的数据获取与交互式看板项目。项目将月度房价指数整理为长表 CSV，再生成紧凑的静态数据分片，由 React 和 Apache ECharts 展示城市排名、涨跌分布、城市层级对比和长期趋势。
+基于国家统计局月度发布的住宅价格指数，浏览 70 城涨跌、历史变化与单城数据。支持新建商品住宅、二手住宅及不同面积段，默认展示最新月份的二手住宅环比。
 
-看板默认展示最新月份的二手住宅环比数据，支持切换月份、住宅类型、面积段和指标。整体趋势可在 70 城总量与一二三线城市分层占比之间切换，用统一口径观察不同城市层级的市场分化。
-
-数据解析优先读取国家统计局详情页 HTML 文本；历史页面结构不一致时，会按搜索 API 候选 URL 重试并保留最佳解析结果。增量更新模式只抓取已发布的新月份，避免猜测或反复请求不存在的详情页。
+**[在线查看](https://house.taifua.com/)** · [数据口径与更新](./docs/DATA.md) · [开发指南](./docs/DEVELOPMENT.md) · [Docker 部署](./docs/DEPLOY.md)
 
 ## 效果演示
 
-最新月份概览：
+**月度概览**：分层展示全部 70 城涨跌，配合首尾城市、涨跌分布、层级对比及环比与同比视图。
 
-![](./demo/overview.png)
+![月度概览：70 城涨跌矩阵](./demo/overview.png)
 
-一二三线城市分层趋势：
+**历史趋势**：整体涨跌数量、分层占比与市场广度，以及按城市和月份展开的涨跌热力图。
 
-![](./demo/tier-trend.png)
+![历史趋势：一二三线城市分层占比](./demo/tier-trend.png)
 
-页头筛选入口与右侧抽屉：
+**城市看板**：新房与二手房当月表现、最多 5 城走势对比、区间指数及逐月历史明细，共用城市与时间筛选。
 
-![](./demo/sidebar.png)
+![城市看板：当月表现与联动走势](./demo/city-board.png)
 
-## 项目结构
+移动端采用底部导航，支持城市搜索和筛选。图表可下载为带口径、来源及缺失说明的 PNG，生成过程在浏览器完成。[移动端预览](./demo/mobile.png) · [筛选预览](./demo/sidebar.png)
 
-```text
-.
-├── app.py                                  # 迁移期保留的 Streamlit 版本
-├── housing_constants.py                    # 城市层级与指标顺序等共享配置
-├── dashboard_runtime.py                    # 旧版移动设备识别
-├── dashboard_trends.py                     # 总体与分层趋势数据聚合
-├── web/                                    # React、TypeScript、Vite、ECharts 前端
-│   ├── src/                                # 页面、组件、图表与数据计算
-│   └── public/data/                        # 浏览器端静态数据分片
-├── Dockerfile                              # 生产镜像定义
-├── docker-compose.yml                      # 单容器部署配置
-├── docker/                                 # Nginx 与运行时统计配置
-├── DEPLOY.md                               # Docker 部署说明
-├── PROJECT_RETROSPECTIVE.md                # 项目工程复盘与可复用方法
-├── assets/favicon.ico                      # 房屋 favicon
-├── scripts/fetch_stats.py                  # 数据获取、解析、导出 CLI
-├── scripts/build_web_data.py               # CSV 转静态矩阵分片
-├── tests/                                   # 数据聚合与抓取回归测试
-├── data/
-│   └── house_price_index_all.csv.gz        # 全历史长表数据（gzip 压缩 CSV）
-├── requirements.txt
-└── AGENTS.md
-```
+## 本地运行
 
-## 环境准备
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-cd web
-npm install
-```
-
-## 数据获取
-
-获取全部历史月份：
-
-```bash
-python3 scripts/fetch_stats.py \
-  --all-history \
-  --out data/house_price_index_all.csv
-gzip -n -9 -f data/house_price_index_all.csv
-```
-
-日常更新建议使用增量模式。脚本会读取现有数据，只抓取当前最大月份之后、已经出现在国家统计局搜索 API 中的新月份；暂未发布的月份会记录到 `data/house_price_index_missing.json`，不会尝试猜测或反复抓取不存在的详情页：
-
-```bash
-python3 scripts/fetch_stats.py \
-  --incremental \
-  --existing data/house_price_index_all.csv.gz \
-  --out data/house_price_index_all.csv.gz
-
-python3 scripts/build_web_data.py
-```
-
-第二条命令会重新生成 `web/public/data/manifest.json` 和 24 个数据矩阵分片，并验证静态记录总数与长表一致。
-
-获取单个详情页：
-
-```bash
-python3 scripts/fetch_stats.py \
-  --url "https://www.stats.gov.cn/xxgk/sjfb/zxfb2020/202607/t20260715_1964115.html" \
-  --out data/house_price_index.csv
-```
-
-限制搜索页数用于调试：
-
-```bash
-python3 scripts/fetch_stats.py \
-  --all-history \
-  --max-search-pages 1 \
-  --out data/house_price_index_sample_history.csv
-```
-
-## 启动可视化
+需要 Node.js 22。仓库已包含静态数据，仅浏览看板无需安装 Python。
 
 ```bash
 cd web
+npm ci
 npm run dev
 ```
 
-Docker 部署及可选百度统计配置见 [`DEPLOY.md`](./DEPLOY.md)。
+访问 `http://localhost:5173/`。生产构建使用 `npm run build`，生成的 `web/dist/` 可由静态服务器托管，不需要常驻 Python 或 Streamlit。
 
-前端开发服务器默认运行在 `http://localhost:5173`。生产构建与本地预览：
+## 数据与维护
 
-```bash
-npm run build
-npm run preview
-```
+- 原始长表：[data/house_price_index_all.csv.gz](./data/house_price_index_all.csv.gz)；数据范围与覆盖度以[静态清单](./web/public/data/manifest.json)和站内筛选说明为准。
+- 涨跌幅为官方指数减 100，**不是每平方米房价**；页面均值为城市等权描述，不是全国房价指数。
+- 历史数据存在缺口。仅区间指数会按持平填补缺失月份并明确标注，属于估算，不是官方定基指数。
+- GitHub Actions 每月 8–21 日检测上月数据，完整后创建更新 PR；已入库或已有 PR 时不再抓取。合并与线上部署仍需确认。
+- 当前维护 `dev` 分支。数据获取、口径与缺失处理见[数据文档](./docs/DATA.md)，测试与演示图生成见[开发指南](./docs/DEVELOPMENT.md)。
 
-生产页面只读取 `web/public/data/`，不需要常驻 Python、Streamlit 或 WebSocket 会话。迁移期保留旧版用于结果回归：
-
-```bash
-streamlit run app.py
-```
-
-## 可视化功能
-
-首页默认展示最新月份的 `二手住宅` 环比数据。页头右侧按钮可打开覆盖式筛选抽屉，调整月份、住宅类型、面积段和指标；抽屉不会压缩图表宽度，当前筛选标题右侧的外链图标可打开国家统计局原文。
-
-主要视图包括：
-
-- 城市排名：按变动幅度排序，并可在图内切换全部、一线、二线、三线城市。
-- 首尾城市对比、城市涨跌分布、城市层级对比：展示极值、分布和一二三线城市的范围、均值、数量。
-- 价格趋势：同时展示整体趋势和城市趋势，默认显示近 10 年数据。整体趋势默认用发散堆叠柱显示每月上涨、持平、下跌城市数，也可切换为一二三线城市的层级内涨跌占比；城市趋势展示选中城市的长期折线。
-
-历史数据存在部分月份或表格缺失。趋势图会保留完整年份刻度；城市趋势会保留完整月份序列，缺失月份不显示数据点，但前后真实观测点保持连接。图下方出现 `* 部分数据缺失` 或 `* 部分月份数据缺失` 时，应结合 tooltip 中的覆盖城市数解读。
-
-## 当前数据说明
-
-当前已生成的全历史文件包含：
-
-- `170,584` 条长表记录
-- `161` 个有数据月份
-- 时间范围：`2011-02` 至 `2026-07`
-
-注意：早期历史页面和现代页面的表格结构不同。2011-2018 年部分月份只发布表 1/2，或国家统计局迁移索引中存在失效链接，因此不是所有月份都有现代格式的表 1-4 完整记录。可按 `period`、`table_no` 和 `source_url` 聚合 `data/house_price_index_all.csv.gz` 查看每个月的记录数、表号覆盖和来源 URL。
-
-## 输出字段
-
-CSV 使用长表结构：
-
-```text
-period,table_no,table_name,house_type,size_band,city,metric,base,value,change_pct,source_url,title
-```
-
-- `period`: 数据月份，例如 `2026-04`
-- `table_no`: 国家统计局原文表号
-- `house_type`: `新建商品住宅` 或 `二手住宅`
-- `size_band`: `全部`、`90m2及以下`、`90-144m2`、`144m2以上`
-- `metric`: `环比`、`同比`、`累计平均`
-- `value`: 国家统计局发布的指数值
-- `change_pct`: `value - 100`
-- `source_url`: 原始详情页 URL
-
-## 开发检查
-
-```bash
-python3 -m py_compile scripts/fetch_stats.py scripts/build_web_data.py housing_constants.py dashboard_runtime.py dashboard_trends.py app.py
-python3 -m unittest discover -s tests
-
-cd web
-npm test
-npm run build
-npx playwright test
-```
-
-修改解析逻辑后，建议至少验证一个现代详情页和一个旧迁移页。
-
-项目从数据发现、解析、可视化到生产部署的完整演进、踩坑和可复用方法，见 [`PROJECT_RETROSPECTIVE.md`](./PROJECT_RETROSPECTIVE.md)。
+从抓取、可视化到部署的历史经验与踩坑记录，见[项目工程复盘](./docs/PROJECT_RETROSPECTIVE.md)。

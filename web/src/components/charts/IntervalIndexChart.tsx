@@ -1,58 +1,29 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo } from "react";
 import type { EChartsCoreOption } from "echarts/core";
 
 import { EChart } from "../EChart";
-import { CityPicker } from "../CityPicker";
-import { FilterSelect } from "../FilterSelect";
-import { Segmented } from "../Segmented";
+import { ChartPanel } from "../ChartPanel";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { axisLabelStyle, COLORS, splitLineStyle } from "../../lib/chartTheme";
-import { reconcileCityColors } from "../../lib/cityColors";
-import { datasetForSelection, loadShard } from "../../lib/data";
 import { completeMonths, formatPct, formatPeriod, formatSizeBand, summarizePeriodRanges } from "../../lib/format";
-import { buildIntervalIndex, groupIntervalMissingPeriods, intervalLineSegments, intervalStartForRange, MAX_INTERVAL_CITIES, type IntervalSelection } from "../../lib/intervalIndex";
-import type { DatasetDescriptor, DatasetShard, Manifest, TrendRange } from "../../types";
-
-const rangeOptions: ReadonlyArray<{ value: TrendRange; label: string }> = [
-  { value: "all", label: "全部" },
-  { value: "3y", label: "近3年" },
-  { value: "5y", label: "近5年" },
-  { value: "10y", label: "近10年" },
-];
+import { buildIntervalIndex, groupIntervalMissingPeriods, intervalLineSegments, type IntervalSelection } from "../../lib/intervalIndex";
+import type { DatasetDescriptor, DatasetShard, Manifest } from "../../types";
 
 interface IntervalIndexChartProps {
   manifest: Manifest;
   descriptor: DatasetDescriptor;
   shard?: DatasetShard;
-  housingControl?: ReactNode;
+  failed: boolean;
   selection: IntervalSelection;
-  onSelectionChange: (selection: IntervalSelection) => void;
+  cityColors: ReadonlyMap<string, string>;
+  period: string;
+  onPeriodChange: (period: string) => void;
 }
 
-export function IntervalIndexChart({ manifest, descriptor, shard, selection, onSelectionChange, housingControl }: IntervalIndexChartProps) {
+export function IntervalIndexChart({ manifest, descriptor, shard: momShard, failed, selection, cityColors, period, onPeriodChange }: IntervalIndexChartProps) {
   const isMobile = useMediaQuery("(max-width: 767px)");
-  const momDescriptor = datasetForSelection(manifest, descriptor.houseType, descriptor.sizeBand, "环比");
-  const [loaded, setLoaded] = useState<DatasetShard | null>(null);
-  const [error, setError] = useState<{ id: string; message: string } | null>(null);
-  useEffect(() => {
-    if (!momDescriptor || shard?.id === momDescriptor.id) return;
-    let active = true;
-    setError(null);
-    loadShard(momDescriptor).then((data) => {
-      if (active) setLoaded(data);
-    }).catch((reason: unknown) => {
-      if (active) setError({ id: momDescriptor.id, message: reason instanceof Error ? reason.message : "环比数据加载失败" });
-    });
-    return () => { active = false; };
-  }, [shard?.id, momDescriptor]);
-  const momShard = shard && shard.id === momDescriptor?.id ? shard : loaded?.id === momDescriptor?.id ? loaded : null;
-  const loadError = !momDescriptor ? "当前住宅类型和面积段缺少环比数据。"
-    : !momShard && error?.id === momDescriptor.id ? error.message : null;
-  const periods = useMemo(() => momDescriptor?.periods.length
-    ? completeMonths(momDescriptor.periods[0]!, momDescriptor.periods.at(-1)!) : [], [momDescriptor]);
-  const firstPeriod = periods[0] ?? selection.start;
-  const activeRange = rangeOptions.find((range) =>
-    intervalStartForRange(firstPeriod, selection.end, range.value) === selection.start)?.value ?? "";
+  const loadError = failed ? "环比数据加载失败" : null;
+  const periods = useMemo(() => completeMonths(selection.start, selection.end), [selection.start, selection.end]);
   const results = useMemo(() => momShard
     ? selection.cities.map((city) => ({ city, ...buildIntervalIndex(momShard,
       manifest.cities.findIndex((item) => item.name === city), selection.start, selection.end, true) }))
@@ -66,13 +37,6 @@ export function IntervalIndexChart({ manifest, descriptor, shard, selection, onS
   const missingGroups = groupIntervalMissingPeriods(results ?? []);
   const estimateLabel = imputedCities.length ? "（含持平填补）" : "";
   const scope = [descriptor.houseType, ...(descriptor.sizeBand === "全部" ? [] : [formatSizeBand(descriptor.sizeBand)])].join(" · ");
-  const [colorAssignments, setColorAssignments] = useState(() => reconcileCityColors(selection.cities, new Map()));
-  const cityColors = useMemo(() => reconcileCityColors(selection.cities, colorAssignments), [selection.cities, colorAssignments]);
-  useEffect(() => {
-    if (cityColors.size !== colorAssignments.size || [...cityColors].some(([city, color]) => colorAssignments.get(city) !== color)) {
-      setColorAssignments(cityColors);
-    }
-  }, [cityColors, colorAssignments]);
 
   const option = useMemo<EChartsCoreOption>(() => {
     const points = results?.[0]?.points ?? [];
@@ -188,36 +152,17 @@ export function IntervalIndexChart({ manifest, descriptor, shard, selection, onS
   }, [cityColors, imputedCount, isMobile, multiple, results, selection]);
 
   return (
-    <div className="chart-block interval-index-chart">
-      <div className="chart-heading-row interval-heading">
-        <h3>区间指数</h3>
-        <span className="interval-meta">{scope} · 环比连乘 · 起点 = 100</span>
-      </div>
-      {housingControl}
-      <CityPicker cities={manifest.cities} selected={selection.cities} colors={cityColors}
-        label="区间指数城市选择" maxSelected={MAX_INTERVAL_CITIES}
-        onChange={(cities) => onSelectionChange({ ...selection, cities })} />
+    <ChartPanel className="interval-index-chart" title="区间指数"
+      subtitle={`${selection.cities.join("、")} · ${scope} · ${selection.start} - ${selection.end} · 环比连乘 · 起点 = 100${estimateLabel}`}
+      fileName={`${selection.cities.join("-")}-${descriptor.houseType}-${formatSizeBand(descriptor.sizeBand)}-${selection.start}-${selection.end}-区间指数${estimateLabel}`}
+      notes={[
+        ...(results ?? []).map((item) => `${item.city}：终点指数 ${item.endIndex?.toFixed(1) ?? "--"}，区间累计涨跌 ${item.endIndex == null ? "--" : formatPct(item.endIndex - 100)}${item.imputedPeriods.length ? "（含持平填补）" : ""}。`),
+        ...missingGroups.map((group) => `${group.cities.join("、")}：缺失 ${group.periods.length} 个月环比数据：${summarizePeriodRanges(group.periods, null)}。`),
+        ...(missingGroups.length ? ["已按持平填补，缺失段以虚线表示，后续累计值均含填补假设。"] : []),
+        "按公开环比连乘估算，受舍入与权重调整影响；非官方定基指数，不代表具体房产价格。",
+      ]}
+      headingClassName="interval-heading" headingContent={<span className="interval-meta">{scope} · 环比连乘 · 起点 = 100</span>}>
       <div className="interval-toolbar">
-        <div className="interval-range-controls">
-          <div className="interval-controls">
-            <label>
-              <span>起始月份</span>
-              <FilterSelect value={selection.start} disabled={!periods.length} onChange={(event) => onSelectionChange({ ...selection, start: event.target.value })}>
-                {periods.map((period) => <option key={period} value={period} disabled={period > selection.end}>{formatPeriod(period)}</option>)}
-              </FilterSelect>
-            </label>
-            <label>
-              <span>结束月份</span>
-              <FilterSelect value={selection.end} disabled={!periods.length} onChange={(event) => onSelectionChange({ ...selection, end: event.target.value })}>
-                {periods.map((period) => <option key={period} value={period} disabled={period < selection.start}>{formatPeriod(period)}</option>)}
-              </FilterSelect>
-            </label>
-          </div>
-          {periods.length > 0 && <Segmented<TrendRange | ""> value={activeRange} options={rangeOptions}
-            label="区间指数快捷区间" onChange={(range) => {
-              if (range) onSelectionChange({ ...selection, start: intervalStartForRange(firstPeriod, selection.end, range) });
-            }} />}
-        </div>
         {selection.cities.length === 1 && <dl className="interval-summary" aria-live="polite" aria-describedby={imputedCount ? "interval-fill-note" : undefined}>
           <div><dt>终点指数{estimateLabel && <sup className="interval-estimate-marker" aria-hidden="true">*</sup>}</dt><dd data-testid="interval-end-index">{endIndex == null ? "--" : endIndex.toFixed(1)}</dd></div>
           <div><dt>区间累计涨跌{estimateLabel && <sup className="interval-estimate-marker" aria-hidden="true">*</sup>}</dt><dd data-testid="interval-change" style={{ color: change == null || change === 0 ? COLORS.text : change > 0 ? COLORS.up : COLORS.down }}>{change == null ? "--" : formatPct(change)}</dd></div>
@@ -229,9 +174,10 @@ export function IntervalIndexChart({ manifest, descriptor, shard, selection, onS
             : (
             <EChart
               option={option}
+              group="city-history"
+              periodInteraction={{ periods, selected: period, onSelect: onPeriodChange }}
               height={(isMobile ? 300 : 360) + (multiple ? 40 : 0)}
               ariaLabel={`${selection.cities.join("、")}区间指数，起点100${multiple ? "" : `，终点${endIndex?.toFixed(1)}`}${estimateLabel}`}
-              fileName={`${selection.cities.join("-")}-${descriptor.houseType}-${formatSizeBand(descriptor.sizeBand)}-${selection.start}-${selection.end}-区间指数${estimateLabel}`}
             />
           )}
       {multiple && results && <table className="interval-results" aria-label="区间指数对比结果" aria-describedby={estimateLabel ? "interval-fill-note" : undefined}>
@@ -250,6 +196,6 @@ export function IntervalIndexChart({ manifest, descriptor, shard, selection, onS
         <p>已按持平填补，缺失段以虚线表示，后续累计值均含填补假设。</p>
       </div>}
       <p className="trend-note interval-method">按公开环比连乘估算，受舍入与权重调整影响；非官方定基指数，不代表具体房产价格。</p>
-    </div>
+    </ChartPanel>
   );
 }

@@ -100,6 +100,7 @@ export default function DashboardContent({
             <SummaryGrid data={cityData} manifest={manifest} />
             <CityOverview
               filePrefix={filePrefix}
+              subtitle={overviewMeta}
               manifest={manifest}
               shard={shard}
               descriptor={descriptor}
@@ -109,10 +110,10 @@ export default function DashboardContent({
               onTierChange={onOverviewTierChange}
             />
             <div className="two-chart-grid">
-              <ExtremeChart data={cityData} filePrefix={filePrefix} metric={descriptor.metric} />
-              <DistributionChart data={cityData} filePrefix={filePrefix} metric={descriptor.metric} />
+              <ExtremeChart data={cityData} filePrefix={filePrefix} subtitle={overviewMeta} metric={descriptor.metric} />
+              <DistributionChart data={cityData} filePrefix={filePrefix} subtitle={overviewMeta} metric={descriptor.metric} />
             </div>
-            <TierComparisonChart data={cityData} filePrefix={filePrefix} metric={descriptor.metric} />
+            <TierComparisonChart data={cityData} filePrefix={filePrefix} subtitle={overviewMeta} metric={descriptor.metric} />
             <Suspense fallback={<div className="content-loader analysis-loader"><span /><span /><span /></div>}>
               <MonthlyComparisonView
                 manifest={manifest}
@@ -131,6 +132,7 @@ export default function DashboardContent({
               manifest={manifest}
               shard={shard}
               filePrefix={historyFilePrefix}
+              subtitle={trendMeta}
               metric={descriptor.metric}
               mode={trendMode}
               range={overallRange}

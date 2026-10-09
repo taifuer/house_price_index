@@ -14,7 +14,9 @@ export function ScrollJump() {
       const footer = document.getElementById("app-footer");
       if (!footer) return;
       const footerTop = footer.getBoundingClientRect().top;
-      setBottom(Math.max(20, footerTop < window.innerHeight ? window.innerHeight - footerTop + 16 : 20));
+      const nav = document.querySelector(".task-navigation")?.getBoundingClientRect();
+      const navOffset = nav && window.matchMedia("(max-width: 767px)").matches ? window.innerHeight - nav.top + 12 : 20;
+      setBottom(Math.max(navOffset, footerTop < window.innerHeight ? window.innerHeight - footerTop + 16 : 20));
     };
     const scheduleUpdate = () => {
       if (!frame) frame = window.requestAnimationFrame(update);

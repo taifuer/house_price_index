@@ -23,8 +23,8 @@ test("search opens a single-city panorama and keeps all six observations faithfu
   await dialog.getByRole("searchbox").press("Enter");
   await expect(page.locator(".city-page-title")).toHaveText("杭州");
   await expect(page.locator(".city-trend-anchor")).toBeFocused();
-  await expect(page.locator(".city-trend-chart .city-tag")).toHaveText(["杭州"]);
-  await expect(page.locator(".interval-index-chart .city-tag")).toHaveText(["杭州"]);
+  await expect(page.locator(".city-history-controls .city-tag-name")).toHaveText(["杭州"]);
+  await expect(page.locator(".city-history-controls .city-tag-name")).toHaveText(["杭州"]);
   const table = page.getByRole("table", { name: "杭州当月住宅价格变化" });
   await expect(table.getByRole("columnheader")).toHaveText(["住宅类型", "环比", "同比", "累计平均同比"]);
   await expect(table.getByRole("rowheader")).toHaveText(["新建商品住宅", "二手住宅"]);
@@ -38,10 +38,9 @@ test("search opens a single-city panorama and keeps all six observations faithfu
     await expect(row.getByRole("cell").nth(metricIndex)).toHaveText(formatPct(value - 100));
   }
   await table.getByRole("button", { name: "查看杭州新建商品住宅同比走势", exact: true }).click();
-  await expect(page.getByRole("combobox", { name: "走势住宅类型" })).toHaveValue("新建商品住宅");
+  await expect(page.getByRole("combobox", { name: "城市历史住宅类型" })).toHaveValue("新建商品住宅");
   await expect(page.getByRole("combobox", { name: "走势指标" })).toHaveValue("同比");
-  await expect(page.getByRole("combobox", { name: "区间指数住宅类型" })).toHaveValue("二手住宅");
-  await expect(page.locator(".city-series-anchor")).toBeFocused();
+  await expect(page.locator(".interval-meta").first()).toContainText("新建商品住宅");
   await expect(page.locator(".city-snapshot-table button")).toHaveCount(6);
   await page.getByRole("navigation").getByRole("link", { name: "月度概览" }).click();
   await expect(page.locator(".section-title-meta")).toHaveText("二手住宅 · 同比 · 2026年7月");
@@ -49,7 +48,7 @@ test("search opens a single-city panorama and keeps all six observations faithfu
   await page.getByRole("navigation").getByRole("link", { name: "城市看板" }).click();
   await page.reload();
   await expect(page.locator(".city-page-title")).toHaveText("杭州");
-  await expect(page.getByRole("combobox", { name: "走势住宅类型" })).toHaveValue("新建商品住宅");
+  await expect(page.getByRole("combobox", { name: "城市历史住宅类型" })).toHaveValue("新建商品住宅");
   expect(errors).toEqual([]);
 });
 
@@ -64,21 +63,21 @@ test("city area and snapshot month filters do not alter national or chart time r
   await expect(page.locator(".city-snapshot-table tbody td")).toHaveCount(6);
   await expect(page.locator(".city-snapshot-table tbody tr td:last-child")).toHaveText(["—", "—"]);
   await expect(page.locator(".city-snapshot-table tbody button")).toHaveCount(4);
-  await expect(page.locator(".interval-index-chart").getByLabel("结束月份")).toHaveValue("2026-08");
+  await expect(page.locator(".city-history-controls").getByLabel("结束月份")).toHaveValue("2026-08");
   await page.locator(".filter-toggle").click();
   await drawer.getByRole("combobox", { name: "面积段", exact: true }).selectOption({ index: 1 });
   await drawer.getByRole("button", { name: "完成" }).click();
   await expect(page.locator(".section-title-meta")).toContainText("90m²及以下");
   await expect(page.locator(".city-snapshot-table tbody button")).toHaveCount(4);
-  await page.getByRole("combobox", { name: "区间指数住宅类型" }).selectOption("新建商品住宅");
-  await expect(page.getByRole("combobox", { name: "走势住宅类型" })).toHaveValue("二手住宅");
+  await page.getByRole("combobox", { name: "城市历史住宅类型" }).selectOption("新建商品住宅");
+  await expect(page.getByRole("combobox", { name: "城市历史住宅类型" })).toHaveValue("新建商品住宅");
   await page.getByRole("navigation").getByRole("link", { name: "月度概览" }).click();
   await expect(page.locator(".section-title-meta")).toHaveText("二手住宅 · 环比 · 2026年7月");
   await page.getByRole("navigation").getByRole("link", { name: "城市看板" }).click();
   await page.reload();
   await expect(page.locator(".section-title-meta")).toContainText("90m²及以下");
   await expect(page.getByRole("combobox", { name: "当月表现月份" })).toHaveValue("2026-01");
-  await expect(page.getByRole("combobox", { name: "区间指数住宅类型" })).toHaveValue("新建商品住宅");
+  await expect(page.getByRole("combobox", { name: "城市历史住宅类型" })).toHaveValue("新建商品住宅");
 });
 
 test("partial request failures do not blank other city observations", async ({ page }) => {
@@ -96,7 +95,7 @@ test("city drilldown carries monthly context and search visits support browser b
   await page.locator(".city-overview").getByRole("button", { name: /^北京，/ }).click();
   await expect(page.locator(".city-page-title")).toHaveText("北京");
   await expect(page.getByRole("combobox", { name: "当月表现月份" })).toHaveValue("2026-07");
-  await expect(page.getByRole("combobox", { name: "走势住宅类型" })).toHaveValue("新建商品住宅");
+  await expect(page.getByRole("combobox", { name: "城市历史住宅类型" })).toHaveValue("新建商品住宅");
   await expect(page.locator(".section-title-meta")).toHaveText("90m²及以下");
   await page.locator(".search-toggle").click();
   const search = page.getByRole("dialog", { name: "搜索城市" }).getByRole("searchbox");

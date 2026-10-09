@@ -1,6 +1,8 @@
-import { Search, SlidersHorizontal } from "lucide-react";
+import { Building2, ChartNoAxesCombined, LayoutDashboard, Search, SlidersHorizontal } from "lucide-react";
 import { DASHBOARD_SECTIONS } from "../lib/dashboardState";
 import type { DashboardSection } from "../types";
+
+const NAV_ICONS = { overview: LayoutDashboard, history: ChartNoAxesCombined, cities: Building2 };
 
 interface AppHeaderProps {
   title: string;
@@ -21,8 +23,10 @@ export function AppHeader({ title, filterOpen, activeFilterCount, onToggleFilter
         <h1 className="app-title">
           <a href="/">{title}</a>
         </h1>
-        <nav className="task-navigation" aria-label="数据视图">
-          {DASHBOARD_SECTIONS.map((item) => (
+        <nav className="task-navigation" aria-label="数据视图" inert={filterOpen || searchOpen}>
+          {DASHBOARD_SECTIONS.map((item) => {
+            const Icon = NAV_ICONS[item.value];
+            return (
             <a
               key={item.value}
               href={sectionHref(item.value)}
@@ -33,9 +37,9 @@ export function AppHeader({ title, filterOpen, activeFilterCount, onToggleFilter
                 onSectionChange(item.value);
               }}
             >
-              {item.label}
+              <Icon size={20} strokeWidth={1.8} aria-hidden="true" /><span>{item.label}</span>
             </a>
-          ))}
+          ); })}
         </nav>
         <div className="header-tools">
           <button type="button" className="header-tool search-toggle" onClick={onOpenSearch}

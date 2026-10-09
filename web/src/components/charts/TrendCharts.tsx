@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import type { EChartsCoreOption } from "echarts/core";
 
-import { CityPicker } from "../CityPicker";
 import { EChart } from "../EChart";
+import { ChartPanel } from "../ChartPanel";
 import { Segmented } from "../Segmented";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
-import { CITY_SERIES_COLORS, reconcileCityColors } from "../../lib/cityColors";
+import { CITY_SERIES_COLORS } from "../../lib/cityColors";
+import type { IntervalSelection } from "../../lib/intervalIndex";
 import { buildOverallTrend, buildTierTrend, marketBreadth } from "../../lib/data";
 import { COLORS, axisLabelStyle, firstPeriodByYear, splitLineStyle } from "../../lib/chartTheme";
 import { completeMonths, formatPct, metricAxisName, periodsForRange, roundOne, summarizePeriodRanges } from "../../lib/format";
@@ -24,6 +25,7 @@ interface TrendProps {
   manifest: Manifest;
   shard: DatasetShard;
   filePrefix: string;
+  subtitle: string;
   metric: string;
 }
 
@@ -71,6 +73,7 @@ export function OverallTrendChart({
   manifest,
   shard,
   filePrefix,
+  subtitle,
   metric,
   mode,
   range,
@@ -235,8 +238,10 @@ export function OverallTrendChart({
   const displayedOption = mode === "overall" ? overallOption : mode === "tier" ? tierOption : breadthOption;
 
   return (
-    <div className="chart-block overall-trend-chart">
-      <h3 className="analysis-chart-title">整体趋势</h3>
+    <ChartPanel className="overall-trend-chart" title="整体趋势"
+      subtitle={`${subtitle} · ${visiblePeriods[0]} - ${visiblePeriods.at(-1)} · ${mode === "overall" ? "总体" : mode === "tier" ? "分层" : "广度"}`}
+      fileName={`${filePrefix}-${mode === "overall" ? "整体趋势" : mode === "tier" ? "分层趋势" : "市场广度"}`}
+      notes={[note, ...(mode === "breadth" ? ["市场广度 =（上涨城市数 - 下跌城市数）/ 覆盖城市数，为派生指标。"] : [])]}>
       <div className="paired-chart-controls">
         <div className="paired-chart-control trend-mode-row">
           <Segmented
@@ -258,61 +263,44 @@ export function OverallTrendChart({
         option={displayedOption}
         height={mode === "tier" ? 640 : 430}
         ariaLabel={mode === "overall" ? "总体涨跌城市数量趋势" : mode === "tier" ? "分层涨跌城市占比趋势" : "市场广度趋势"}
-        fileName={`${filePrefix}-${mode === "overall" ? "整体趋势" : mode === "tier" ? "分层趋势" : "市场广度"}`}
       />
       {note && <p className="trend-note">{note}</p>}
       {mode === "breadth" && <p className="trend-note">* 市场广度 =（上涨城市数 - 下跌城市数）/ 覆盖城市数，为派生指标。</p>}
-    </div>
+    </ChartPanel>
   );
 }
 
 interface CityTrendChartProps extends TrendProps {
   selectionControls?: ReactNode;
-  selectedCities: string[];
-  onSelectedCitiesChange: (cities: string[]) => void;
-  range: TrendRange;
-  onRangeChange: (range: TrendRange) => void;
+  selection: IntervalSelection;
+  cityColors: ReadonlyMap<string, string>;
+  period: string;
+  onPeriodChange: (period: string) => void;
 }
 
 export function CityTrendChart({
   manifest,
   shard,
   filePrefix,
+  subtitle,
   metric,
-  selectedCities,
-  onSelectedCitiesChange,
-  range,
-  onRangeChange,
+  selection,
+  cityColors,
+  period,
+  onPeriodChange,
   selectionControls,
 }: CityTrendChartProps) {
   const isMobile = useMediaQuery("(max-width: 767px)");
-  const visiblePeriods = useMemo(() => {
-    const periods = shard.periods.length ? completeMonths(shard.periods[0]!, shard.periods.at(-1)!) : [];
-    return periodsForRange(periods, range);
-  }, [range, shard]);
-  const rowsByPeriod = new Map(shard.periods.map((period, index) => [period, shard.values[index] ?? []]));
-  const cityIndexes = new Map(manifest.cities.map((city, index) => [city.name, index]));
-  const [cityColors, setCityColors] = useState(() => reconcileCityColors(selectedCities, new Map()));
-
-  useEffect(() => {
-    setCityColors((previous) => {
-      const next = reconcileCityColors(selectedCities, previous);
-      const unchanged = next.size === previous.size
-        && [...next].every(([city, color]) => previous.get(city) === color);
-      return unchanged ? previous : next;
-    });
-  }, [selectedCities]);
-
-  const updateSelectedCities = (cities: string[]) => {
-    setCityColors((previous) => reconcileCityColors(cities, previous));
-    onSelectedCitiesChange(cities);
-  };
-
+  const selectedCities = selection.cities;
+  const visiblePeriods = useMemo(() => completeMonths(selection.start, selection.end), [selection.start, selection.end]);
+  const rowsByPeriod = useMemo(() => new Map(shard.periods.map((period, index) => [period, shard.values[index] ?? []])), [shard]);
+  const cityIndexes = useMemo(() => new Map(manifest.cities.map((city, index) => [city.name, index])), [manifest]);
   const option = useMemo<EChartsCoreOption>(() => ({
     animationDuration: 350,
     aria: { enabled: true, description: "选中城市的价格变动历史趋势" },
     color: [...CITY_SERIES_COLORS],
     legend: {
+      data: selectedCities,
       type: "scroll",
       bottom: 4,
       left: "center",
@@ -324,8 +312,10 @@ export function CityTrendChart({
       pageTextStyle: axisLabelStyle,
       textStyle: axisLabelStyle,
     },
-    grid: { left: 52, right: 18, top: 24, bottom: isMobile ? 60 : 82 },
-    tooltip: { trigger: "axis", borderColor: "#d0d5dd", valueFormatter: (value: unknown) => value == null ? "无数据" : formatPct(Number(value)) },
+    grid: { left: 52, right: 18, top: 24, bottom: isMobile ? 54 : 82 },
+    tooltip: { trigger: "axis", confine: true, borderColor: "#d0d5dd",
+      axisPointer: { type: "cross", label: { show: false }, crossStyle: { type: "dashed", color: COLORS.flat } },
+      valueFormatter: (value: unknown) => value == null ? "无数据" : formatPct(Number(value)) },
     xAxis: yearAxis(visiblePeriods, true, isMobile ? MOBILE_MAX_YEAR_LABELS : undefined),
     yAxis: {
       type: "value",
@@ -365,26 +355,16 @@ export function CityTrendChart({
   const note = selectedCities.length ? missingNote(missingPeriods, "选中城市数据缺失") : "";
 
   return (
-    <div className="chart-block city-trend-chart">
-      <div className="chart-heading-row trend-chart-heading data-chart-heading">
-        <h3>走势对比</h3>
-        <div className="data-chart-filter">
-          <Segmented value={range} options={rangeOptions} onChange={onRangeChange} label="走势对比时间范围" />
-        </div>
-      </div>
-      {selectionControls}
-      <CityPicker
-        cities={manifest.cities}
-        selected={selectedCities}
-        onChange={updateSelectedCities}
-        maxSelected={CITY_SERIES_COLORS.length}
-      />
+    <ChartPanel className="city-trend-chart" title="走势对比"
+      subtitle={`${selectedCities.join("、")} · ${subtitle} · ${selection.start} - ${selection.end}`}
+      fileName={`${filePrefix}-走势对比`} notes={[note]} headingClassName="city-trend-heading" headingContent={selectionControls}>
       {selectedCities.length ? (
-        <EChart option={option} height={425} ariaLabel="选中城市价格走势对比" fileName={`${filePrefix}-走势对比`} />
+        <EChart option={option} height={425} ariaLabel="选中城市价格走势对比"
+          periodInteraction={{ periods: visiblePeriods, selected: period, onSelect: onPeriodChange }} group="city-history" />
       ) : (
         <div className="empty-chart">请选择至少一个城市</div>
       )}
       {note && <p className="trend-note">{note}</p>}
-    </div>
+    </ChartPanel>
   );
 }

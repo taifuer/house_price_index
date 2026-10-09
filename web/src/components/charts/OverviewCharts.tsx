@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import type { EChartsCoreOption } from "echarts/core";
 
 import { EChart } from "../EChart";
+import { ChartPanel } from "../ChartPanel";
 import { CityChangeMatrix } from "../CityChangeMatrix";
 import { Segmented } from "../Segmented";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
@@ -35,11 +36,13 @@ function paddedAxisMaximum({ min, max }: AxisExtent): number {
 interface OverviewChartProps {
   data: CityDatum[];
   filePrefix: string;
+  subtitle: string;
   metric: string;
 }
 
 interface CityOverviewProps {
   filePrefix: string;
+  subtitle: string;
   manifest: Manifest;
   shard: DatasetShard;
   descriptor: DatasetDescriptor;
@@ -49,14 +52,13 @@ interface CityOverviewProps {
   onTierChange: (tier: TierFilter) => void;
 }
 
-export function CityOverview({ filePrefix, manifest, shard, descriptor, period, onViewCity, tier, onTierChange }: CityOverviewProps) {
+export function CityOverview({ filePrefix, subtitle, manifest, shard, descriptor, period, onViewCity, tier, onTierChange }: CityOverviewProps) {
   const rows = useMemo(() => buildObservations(manifest, shard, [period])
     .filter((row) => tier === "全部" || row.tier === tier), [manifest, period, shard, tier]);
 
   return (
-    <div className="chart-block city-overview">
-      <div className="chart-heading-row data-chart-heading">
-        <h3>城市涨跌</h3>
+    <ChartPanel className="city-overview" title="城市涨跌" subtitle={`${subtitle} · ${tier === "全部" ? "全部层级" : tier}`}
+      fileName={`${filePrefix}-城市涨跌`} headingClassName="data-chart-heading" headingContent={
         <div className="data-chart-filter">
           <Segmented
             label="城市层级"
@@ -64,14 +66,13 @@ export function CityOverview({ filePrefix, manifest, shard, descriptor, period, 
             onChange={onTierChange}
             options={(["全部", "一线", "二线", "三线"] as TierFilter[]).map((value) => ({ value, label: value }))}
           />
-        </div>
-      </div>
-      <CityChangeMatrix rows={rows} metric={descriptor.metric} filePrefix={filePrefix} onViewCity={onViewCity} />
-    </div>
+        </div>}>
+      <CityChangeMatrix rows={rows} metric={descriptor.metric} onViewCity={onViewCity} />
+    </ChartPanel>
   );
 }
 
-export function ExtremeChart({ data, filePrefix, metric }: OverviewChartProps) {
+export function ExtremeChart({ data, filePrefix, subtitle, metric }: OverviewChartProps) {
   const isMobile = useMediaQuery("(max-width: 767px)");
   const extremes = useMemo(() => {
     const selected = [...data.slice(0, 5), ...data.slice(-5)];
@@ -129,14 +130,13 @@ export function ExtremeChart({ data, filePrefix, metric }: OverviewChartProps) {
     }],
   }), [extremes, isMobile, maximum, metric]);
   return (
-    <div className="chart-block compact-chart">
-      <h3>首尾城市对比</h3>
-      <EChart option={option} height={365} ariaLabel="首尾城市价格变动对比" fileName={`${filePrefix}-首尾城市对比`} />
-    </div>
+    <ChartPanel className="compact-chart" title="首尾城市对比" subtitle={subtitle} fileName={`${filePrefix}-首尾城市对比`}>
+      <EChart option={option} height={365} ariaLabel="首尾城市价格变动对比" />
+    </ChartPanel>
   );
 }
 
-export function DistributionChart({ data, filePrefix, metric }: OverviewChartProps) {
+export function DistributionChart({ data, filePrefix, subtitle, metric }: OverviewChartProps) {
   const frequencies = useMemo(
     () => buildFrequencyDistribution(data.map((datum) => datum.change)),
     [data],
@@ -212,10 +212,9 @@ export function DistributionChart({ data, filePrefix, metric }: OverviewChartPro
     ],
   }), [frequencies, maximum, maximumValue, metric, minimumValue]);
   return (
-    <div className="chart-block compact-chart">
-      <h3>城市涨跌分布</h3>
-      <EChart option={option} height={365} ariaLabel="城市价格涨跌分布" fileName={`${filePrefix}-城市涨跌分布`} />
-    </div>
+    <ChartPanel className="compact-chart" title="城市涨跌分布" subtitle={subtitle} fileName={`${filePrefix}-城市涨跌分布`}>
+      <EChart option={option} height={365} ariaLabel="城市价格涨跌分布" />
+    </ChartPanel>
   );
 }
 
@@ -230,7 +229,7 @@ interface TierSummary {
   maximum: number;
 }
 
-export function TierComparisonChart({ data, filePrefix, metric }: OverviewChartProps) {
+export function TierComparisonChart({ data, filePrefix, subtitle, metric }: OverviewChartProps) {
   const isMobile = useMediaQuery("(max-width: 767px)");
   const summaries = useMemo<TierSummary[]>(() => (["一线", "二线", "三线"] as CityTier[]).map((tier) => {
     const values = data.filter((datum) => datum.tier === tier).map((datum) => datum.change);
@@ -383,9 +382,9 @@ export function TierComparisonChart({ data, filePrefix, metric }: OverviewChartP
   }), [changeLimit, countGrid, countLimit, isMobile, metric, rangeGrid, summaries]);
 
   return (
-    <div className="chart-block tier-comparison-chart">
-      <h3>城市层级对比</h3>
-      <EChart option={option} height={isMobile ? 570 : 365} ariaLabel="城市层级涨跌数量与范围对比" fileName={`${filePrefix}-城市层级对比`} />
-    </div>
+    <ChartPanel className="tier-comparison-chart" title="城市层级对比" subtitle={subtitle} fileName={`${filePrefix}-城市层级对比`}
+      notes={["红色：上涨；蓝色：下跌；范围图菱形：等权均值。"]}>
+      <EChart option={option} height={isMobile ? 570 : 365} ariaLabel="城市层级涨跌数量与范围对比" />
+    </ChartPanel>
   );
 }
