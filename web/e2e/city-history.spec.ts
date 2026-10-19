@@ -150,7 +150,7 @@ test("switching destinations restores scroll positions after lazy chart loading"
 
 test("hover links monthly tooltips without persisting selection and leaves no stuck emphasis", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "Desktop hover only");
-  await page.goto("/?section=cities&indexStart=2025-12&indexEnd=2026-08");
+  await page.goto("/?section=cities&cityPeriod=2026-08&indexStart=2025-12&indexEnd=2026-08");
   const trend = page.locator(".city-trend-chart .chart-canvas");
   const interval = page.locator(".interval-index-chart .chart-canvas");
   await expect(interval.locator("svg")).toBeVisible();
@@ -170,6 +170,7 @@ test("touch scrolling over a chart does not select a month", async ({ page }, te
   await page.goto("/?section=cities");
   const chart = page.locator(".city-trend-chart .chart-canvas");
   await expect(chart.locator("svg")).toBeVisible();
+  const selectedPeriod = await page.getByRole("combobox", { name: "当月表现月份" }).inputValue();
   await chart.scrollIntoViewIfNeeded();
   const box = (await chart.boundingBox())!;
   const session = await page.context().newCDPSession(page);
@@ -180,7 +181,7 @@ test("touch scrolling over a chart does not select a month", async ({ page }, te
     await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y - offset }] });
   }
   await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-  await expect(page.getByRole("combobox", { name: "当月表现月份" })).toHaveValue("2026-08");
-  await expect(chart).toHaveAttribute("data-selected-period", "2026-08");
+  await expect(page.getByRole("combobox", { name: "当月表现月份" })).toHaveValue(selectedPeriod);
+  await expect(chart).toHaveAttribute("data-selected-period", selectedPeriod);
   await session.detach();
 });

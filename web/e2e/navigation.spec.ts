@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { Manifest } from "../src/types";
 
 test("task navigation retains filters, supports history and mounts only the active charts", async ({ page }) => {
   const errors: string[] = [];
@@ -10,6 +11,7 @@ test("task navigation retains filters, supports history and mounts only the acti
     if (request.url().includes("/data/shards/new-all-mom.json")) shardRequests++;
   });
   await page.goto("/?view=new-all-mom&period=2026-07");
+  const manifest = await (await page.request.get("/data/manifest.json")).json() as Manifest;
   const nav = page.getByRole("navigation", { name: "数据视图" });
   await expect(nav.getByRole("link")).toHaveText(["月度概览", "历史趋势", "城市看板"]);
   await expect(page.locator(".city-matrix-cell")).toHaveCount(70);
@@ -21,7 +23,7 @@ test("task navigation retains filters, supports history and mounts only the acti
   await expect(page.locator(".city-overview, .city-trend-chart")).toHaveCount(0);
   await expect(page.locator(".chart-canvas")).toHaveCount(2);
   await expect(page.locator(".section-title-meta")).toHaveText("新建商品住宅 · 环比");
-  await expect(page.locator(".heatmap-chart svg text").filter({ hasText: /^2026-08$/ })).toHaveCount(2);
+  await expect(page.locator(".heatmap-chart svg text").filter({ hasText: new RegExp(`^${manifest.periodRange[1]}$`) })).toHaveCount(2);
   await page.locator(".filter-toggle").click();
   const drawer = page.getByRole("dialog");
   await expect(drawer.getByRole("combobox", { name: "月份", exact: true })).toHaveCount(0);

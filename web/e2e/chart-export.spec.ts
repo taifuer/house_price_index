@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import type { Manifest } from "../src/types";
 
 declare global {
   interface Window {
@@ -87,12 +88,13 @@ async function downloadChart(page: Page, panel: Locator, path: string) {
 
 test("every chart exports a nonblank bounded PNG with selected context and source", async ({ page }, testInfo) => {
   test.setTimeout(90_000);
+  const manifest = await (await page.request.get("/data/manifest.json")).json() as Manifest;
   const sections = [
-    ["overview", "?period=2026-08", 5],
-    ["history", "?section=history", 2],
-    ["cities", "?section=cities&city=北京&cities=北京,上海,广州,深圳,杭州&indexStart=2021-08&indexEnd=2026-08", 2],
+    ["overview", "?period=2026-08", 5, "2026年8月"],
+    ["history", "?section=history", 2, manifest.periodRange[1]],
+    ["cities", "?section=cities&city=北京&cities=北京,上海,广州,深圳,杭州&indexStart=2021-08&indexEnd=2026-08", 2, "2026-08"],
   ] as const;
-  for (const [section, query, count] of sections) {
+  for (const [section, query, count, expectedPeriod] of sections) {
     await page.goto(`/${query}`);
     await expect(page.getByRole("button", { name: "下载图表", exact: true })).toHaveCount(count);
     if (section === "cities") await expect(page.locator(".interval-index-chart .chart-canvas svg")).toBeVisible();
@@ -100,7 +102,7 @@ test("every chart exports a nonblank bounded PNG with selected context and sourc
       const panel = button.locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' chart-block ')][1]");
       const texts = await downloadChart(page, panel, `/tmp/house-export-${section}-${index}-${testInfo.project.name}.png`);
       expect(texts).toContain("二手住宅");
-      expect(texts).toContain(section === "overview" ? "2026年8月" : "2026-08");
+      expect(texts).toContain(expectedPeriod);
       if (section === "cities") {
         expect(texts).toContain("北京、上海、广州、深圳、杭州");
         expect(texts).toContain("2021-08");

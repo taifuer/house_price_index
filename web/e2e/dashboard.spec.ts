@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import type { DatasetShard, Manifest } from "../src/types";
 
 function extremeChart(page: Page): Locator {
   return page.locator(".compact-chart").filter({
@@ -379,9 +380,20 @@ test("chart download and fullscreen controls work", async ({ page }, testInfo) =
 
 test("persists trend controls and scopes missing-data notes to the visible range", async ({ page }) => {
   await page.goto("/?section=history&view=resale-all-mom&period=2026-07");
+  const manifest = await (await page.request.get("/data/manifest.json")).json() as Manifest;
+  const descriptor = manifest.datasets.find((item) => item.id === "resale-all-mom")!;
+  const shard = await (await page.request.get(`/data/${descriptor.path}`)).json() as DatasetShard;
+  const [year, month] = shard.periods.at(-1)!.split("-").map(Number);
+  const missingMonths = Array.from({ length: 120 }, (_, index) => (
+    new Date(Date.UTC(year! - 10, month! + index, 1)).toISOString().slice(0, 7)
+  )).filter((period) => {
+    const row = shard.values[shard.periods.indexOf(period)];
+    return !row || row.some((value) => value == null);
+  }).length;
   const overallTrend = page.locator(".overall-trend-chart");
   const cityTrend = page.locator(".city-trend-chart");
-  await expect(overallTrend.locator(".trend-note")).toContainText("18 个月份");
+  if (missingMonths) await expect(overallTrend.locator(".trend-note")).toContainText(`* ${missingMonths} 个月份`);
+  else await expect(overallTrend.locator(".trend-note")).toHaveCount(0);
 
   await overallTrend.getByRole("button", { name: "广度", exact: true }).click();
   await expect(overallTrend.getByText(/市场广度 =/)).toBeVisible();
@@ -394,7 +406,8 @@ test("persists trend controls and scopes missing-data notes to the visible range
   await expect(cityTrend.locator(".trend-note")).toHaveCount(0);
   await expect(page).toHaveURL(/trend=tier/);
   await expect(page).toHaveURL(/range=5y/);
-  await expect(page).toHaveURL(/indexStart=2023-08/);
+  const expectedStart = new Date(Date.UTC(year! - 3, month! - 1, 1)).toISOString().slice(0, 7);
+  await expect(page).toHaveURL(new RegExp(`indexStart=${expectedStart}`));
 
   await page.reload();
   await expect(page.locator(".city-history-controls").getByRole("button", { name: "近3年", exact: true })).toHaveAttribute("aria-pressed", "true");
@@ -456,7 +469,7 @@ test("groups monthly views with overview and trend sections", async ({ page }, t
   const shardResponse = await page.request.get(`/data/${descriptor.path}`);
   const firstPeriod = (await shardResponse.json()).periods[0];
   await expect(heatmap.locator(".chart-canvas svg text").filter({ hasText: firstPeriod }).first()).toBeVisible();
-  await expect(heatmap.locator(".chart-canvas svg text").filter({ hasText: /^2026-08$/ }).first()).toBeVisible();
+  await expect(heatmap.locator(".chart-canvas svg text").filter({ hasText: new RegExp(`^${manifest.periodRange[1]}$`) }).first()).toBeVisible();
   const screenshotStyle = await page.addStyleTag({ content: ".app-header { visibility: hidden !important; }" });
   await heatmap.screenshot({ path: `/tmp/house-v4-heatmap-${testInfo.project.name}.png` });
   await screenshotStyle.evaluate((element) => element.remove());

@@ -29,13 +29,15 @@ test("search opens a single-city panorama and keeps all six observations faithfu
   await expect(table.getByRole("columnheader")).toHaveText(["住宅类型", "环比", "同比", "累计平均同比"]);
   await expect(table.getByRole("rowheader")).toHaveText(["新建商品住宅", "二手住宅"]);
   const manifest = await (await page.request.get("/data/manifest.json")).json() as Manifest;
+  const latestPeriod = manifest.periodRange[1];
+  await expect(page.getByRole("combobox", { name: "当月表现月份" })).toHaveValue(latestPeriod);
   const cityIndex = manifest.cities.findIndex((city) => city.name === "杭州");
   for (const descriptor of manifest.datasets.filter((dataset) => dataset.sizeBand === "全部")) {
     const shard = await (await page.request.get(`/data/${descriptor.path}`)).json() as DatasetShard;
-    const value = shard.values[shard.periods.indexOf("2026-08")]![cityIndex]!;
+    const value = shard.values[shard.periods.indexOf(latestPeriod)]?.[cityIndex];
     const row = table.getByRole("row").filter({ has: page.getByRole("rowheader", { name: descriptor.houseType, exact: true }) });
     const metricIndex = manifest.dimensions.metrics.indexOf(descriptor.metric);
-    await expect(row.getByRole("cell").nth(metricIndex)).toHaveText(formatPct(value - 100));
+    await expect(row.getByRole("cell").nth(metricIndex)).toHaveText(value == null ? "—" : formatPct(value - 100));
   }
   await table.getByRole("button", { name: "查看杭州新建商品住宅同比走势", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "城市历史住宅类型" })).toHaveValue("新建商品住宅");
@@ -54,6 +56,7 @@ test("search opens a single-city panorama and keeps all six observations faithfu
 
 test("city area and snapshot month filters do not alter national or chart time ranges", async ({ page }) => {
   await page.goto("/?section=cities&city=上海&view=resale-all-mom&period=2026-07");
+  const manifest = await (await page.request.get("/data/manifest.json")).json() as Manifest;
   await page.locator(".filter-toggle").click();
   const drawer = page.getByRole("dialog", { name: "城市看板筛选" });
   await expect(drawer.getByRole("combobox")).toHaveCount(1);
@@ -63,7 +66,7 @@ test("city area and snapshot month filters do not alter national or chart time r
   await expect(page.locator(".city-snapshot-table tbody td")).toHaveCount(6);
   await expect(page.locator(".city-snapshot-table tbody tr td:last-child")).toHaveText(["—", "—"]);
   await expect(page.locator(".city-snapshot-table tbody button")).toHaveCount(4);
-  await expect(page.locator(".city-history-controls").getByLabel("结束月份")).toHaveValue("2026-08");
+  await expect(page.locator(".city-history-controls").getByLabel("结束月份")).toHaveValue(manifest.periodRange[1]);
   await page.locator(".filter-toggle").click();
   await drawer.getByRole("combobox", { name: "面积段", exact: true }).selectOption({ index: 1 });
   await drawer.getByRole("button", { name: "完成" }).click();

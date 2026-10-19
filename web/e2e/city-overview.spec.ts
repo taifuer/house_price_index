@@ -4,7 +4,7 @@ import type { DatasetShard, Manifest } from "../src/types";
 
 test.beforeEach(async ({ page }) => {
   page.on("pageerror", (error) => { throw error; });
-  await page.goto("/?view=resale-all-mom&period=2026-08");
+  await page.goto("/?view=resale-all-mom");
   await expect(page.locator(".city-matrix-cell")).toHaveCount(70);
 });
 
@@ -86,6 +86,10 @@ test("heatmap displays all city rows and the actual selected date range", async 
   const manifest = await (await page.request.get("/data/manifest.json")).json() as Manifest;
   const descriptor = manifest.datasets.find((item) => item.id === "resale-all-mom")!;
   const shard = await (await page.request.get(`/data/${descriptor.path}`)).json() as DatasetShard;
+  const latestPeriod = shard.periods.at(-1)!;
+  const [year, month] = latestPeriod.split("-").map(Number);
+  const rangeStart = (years: number) => new Date(Date.UTC(year! - years, month!, 1)).toISOString().slice(0, 7);
+  const latestLabel = new RegExp(`^${latestPeriod}$`);
   const cityNames = manifest.cities.map((city) => city.name);
   await expect(canvas.locator("svg")).toBeVisible();
   await expect.poll(() => canvas.locator('svg path[fill^="rgb"]').count()).toBeGreaterThan(2000);
@@ -95,12 +99,12 @@ test("heatmap displays all city rows and the actual selected date range", async 
   expect(allHeight).toBeGreaterThan(1400);
   const range = heatmap.getByRole("group", { name: "热力图时间范围" });
   const tier = heatmap.getByRole("group", { name: "热力图城市层级" });
-  await expect(canvas.locator("svg text").filter({ hasText: /^2023-09$/ })).toHaveCount(2);
-  await expect(canvas.locator("svg text").filter({ hasText: /^2026-08$/ })).toHaveCount(2);
-  for (const [label, firstPeriod] of [["近5年", "2021-09"], ["近10年", "2016-09"], ["全部", shard.periods[0]!]]) {
+  await expect(canvas.locator("svg text").filter({ hasText: new RegExp(`^${rangeStart(3)}$`) })).toHaveCount(2);
+  await expect(canvas.locator("svg text").filter({ hasText: latestLabel })).toHaveCount(2);
+  for (const [label, firstPeriod] of [["近5年", rangeStart(5)], ["近10年", rangeStart(10)], ["全部", shard.periods[0]!]]) {
     await range.getByRole("button", { name: label, exact: true }).click();
     await expect(canvas.locator("svg text").filter({ hasText: firstPeriod }).first()).toBeVisible();
-    await expect(canvas.locator("svg text").filter({ hasText: /^2026-08$/ }).first()).toBeVisible();
+    await expect(canvas.locator("svg text").filter({ hasText: latestLabel }).first()).toBeVisible();
     await expect(canvas.locator("svg text").filter({ hasText: "≥ +1.0%" })).toHaveCount(1);
   }
   await expect(heatmap.locator(".trend-note")).toContainText("不计作持平");
@@ -118,7 +122,7 @@ test("keeps missing cities distinct from flat values and preserves unclipped too
   await page.route("**/data/shards/resale-all-mom.json", async (route) => {
     const response = await route.fetch();
     const shard = await response.json() as DatasetShard;
-    const row = shard.values[shard.periods.indexOf("2026-08")]!;
+    const row = shard.values.at(-1)!;
     row[0] = null;
     row[1] = 100;
     row[2] = 102.2;
@@ -148,6 +152,8 @@ test("keeps missing cities distinct from flat values and preserves unclipped too
 });
 
 test("matrix text and heatmap date labels fit narrow and tablet viewports", async ({ page }) => {
+  const manifest = await (await page.request.get("/data/manifest.json")).json() as Manifest;
+  const latestLabel = new RegExp(`^${manifest.periodRange[1]}$`);
   const heatmap = page.locator(".heatmap-chart");
   await page.getByRole("navigation").getByRole("link", { name: "历史趋势" }).click();
   await heatmap.getByRole("group", { name: "热力图城市层级" }).getByRole("button", { name: "一线", exact: true }).click();
@@ -167,7 +173,7 @@ test("matrix text and heatmap date labels fit narrow and tablet viewports", asyn
     await page.getByRole("navigation").getByRole("link", { name: "历史趋势" }).click();
     for (const label of ["近3年", "全部"]) {
       await heatmap.getByRole("group", { name: "热力图时间范围" }).getByRole("button", { name: label, exact: true }).click();
-      await expect(heatmap.locator("svg text").filter({ hasText: /^2026-08$/ })).toHaveCount(2);
+      await expect(heatmap.locator("svg text").filter({ hasText: latestLabel })).toHaveCount(2);
       const overlaps = await heatmap.locator("svg text").evaluateAll((texts) => {
         const dates = texts.filter((text) => /^\d{4}-\d{2}$/.test(text.textContent ?? "")).map((text) => text.getBoundingClientRect());
         return dates.some((rect, index) => dates.slice(index + 1).some((other) =>
