@@ -345,8 +345,8 @@ a {
 }
 
 .city-page-heading .section-title-meta {
-  margin-left: auto;
-  text-align: right;
+  margin-left: 0;
+  text-align: left;
 }
 
 .city-snapshot .chart-heading-row {
@@ -354,20 +354,8 @@ a {
   align-items: center;
 }
 
-.snapshot-sources {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.snapshot-sources .filter-select {
-  width: 142px;
-}
-
-.snapshot-source-links {
-  display: flex;
-  min-width: 32px;
-}
+.snapshot-source-note { margin: 8px 0 0; color: #667085; font-size: var(--font-note); }
+.snapshot-source-note a + a { margin-left: 8px; }
 
 .city-snapshot-table {
   width: 100%;
@@ -388,6 +376,8 @@ a {
   color: #667085;
   background: #f8fafc;
 }
+
+.city-snapshot-table thead th span { white-space: nowrap; }
 
 .city-snapshot-table tr > :first-child {
   width: 25%;
@@ -446,7 +436,8 @@ a {
 
 .city-history-controls .city-picker { margin-top: 14px; }
 .city-primary-label { color: #667085; font-size: 10px; padding: 5px 3px; }
-.city-trend-heading > .filter-select { width: 142px; }
+.city-trend-heading > .filter-select { width: 136px; }
+.city-trend-chart .city-trend-heading { justify-content: flex-start; gap: 10px; }
 
 .city-history-table table {
   width: 100%;
@@ -607,11 +598,11 @@ a {
 
 .filter-select select {
   width: 100%;
-  height: var(--filter-control-height);
+  height: 44px;
   padding: 0 36px 0 12px;
   appearance: none;
   border: 1px solid #d0d5dd;
-  border-radius: 6px;
+  border-radius: 4px;
   outline: none;
   background: #ffffff;
   color: #101828;
@@ -626,6 +617,7 @@ a {
 .filter-select {
   position: relative;
   display: block;
+  min-width: 0;
 }
 
 .filter-select svg {
@@ -650,6 +642,14 @@ a {
 .filter-select:focus-within svg {
   color: #2563eb;
 }
+
+.filter-select select:disabled { opacity: 0.55; cursor: default; }
+.filter-select-compact select { height: 40px; border-color: transparent; background: #f5f7f9; color: #475467; }
+.filter-select-inline select { height: 40px; padding: 0 24px 0 2px; border-color: transparent; background: transparent; color: #475467; }
+.filter-select-inline svg { right: 4px; }
+.month-select { flex: 0 0 116px; width: 116px; }
+.source-text-link { color: #2563eb; text-decoration: none; }
+.source-text-link:hover, .source-text-link:focus-visible { text-decoration: underline; }
 
 .filter-details {
   display: grid;
@@ -754,6 +754,7 @@ a {
 .section-heading {
   min-height: 48px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-start;
   gap: 8px;
@@ -790,7 +791,8 @@ a {
   min-width: 0;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  flex-wrap: wrap;
+  gap: 0 6px;
 }
 
 .section-title-label {
@@ -1363,9 +1365,10 @@ a {
   min-width: 0;
   height: var(--filter-control-height);
   overflow: hidden;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  background: #ffffff;
+  padding: 3px;
+  border: 0;
+  border-radius: 4px;
+  background: #f1f3f5;
 }
 
 .segmented button {
@@ -1374,10 +1377,10 @@ a {
   justify-content: center;
   gap: 5px;
   min-width: 46px;
-  height: calc(var(--filter-control-height) - 2px);
+  height: calc(var(--filter-control-height) - 6px);
   padding: 0 11px;
   border: 0;
-  border-right: 1px solid #d7dce2;
+  border-radius: 4px;
   background: transparent;
   color: #667085;
   font-size: var(--font-control);
@@ -1398,8 +1401,8 @@ a {
 
 .segmented button.is-active {
   color: #1d4ed8;
-  background: #eff6ff;
-  box-shadow: inset 0 -2px 0 #2563eb;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px #dfe5ee, 0 1px 2px #1721330a;
 }
 
 .two-chart-grid {
@@ -1753,6 +1756,16 @@ a {
   font-size: 14px;
 }
 
+.data-retry { display: flex; align-items: center; gap: 4px; margin: 8px 0; }
+.data-retry span { min-width: 0; overflow-wrap: anywhere; }
+.data-retry.fatal-error { margin: 20vh auto 0; }
+.retry-button { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 40px; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: inherit; }
+.retry-button:hover, .retry-button:focus-visible { background: #fee4e2; }
+.retry-button:disabled { opacity: 0.55; cursor: default; }
+.is-spinning { animation: retry-spin 1s linear infinite; }
+@keyframes retry-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .is-spinning { animation: none; } }
+
 .fatal-error {
   width: min(560px, calc(100% - 32px));
   margin: 20vh auto 0;
@@ -1898,6 +1911,8 @@ a {
     gap: 6px;
     min-height: 44px;
   }
+
+  .section-meta-row { flex-basis: 100%; padding-bottom: 6px; }
 
   .section-title-meta {
     font-size: var(--font-note);

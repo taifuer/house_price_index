@@ -2,7 +2,7 @@ export type CityTier = "一线" | "二线" | "三线";
 export type TierFilter = "全部" | CityTier;
 export type DashboardSection = "overview" | "history" | "cities";
 export type TrendRange = "all" | "3y" | "5y" | "10y";
-export type TrendMode = "overall" | "tier" | "breadth";
+export type TrendMode = "overall" | "tier";
 
 export interface CityDefinition {
   name: string;

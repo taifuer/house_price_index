@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import type { DatasetShard, Manifest } from "../src/types";
+import { mockShards } from "./data-fixture";
 
 test.beforeEach(async ({ page }) => {
   page.on("pageerror", (error) => { throw error; });
@@ -119,15 +120,12 @@ test("heatmap displays all city rows and the actual selected date range", async 
 });
 
 test("keeps missing cities distinct from flat values and preserves unclipped tooltips", async ({ page }, testInfo) => {
-  await page.route("**/data/shards/resale-all-mom.json", async (route) => {
-    const response = await route.fetch();
-    const shard = await response.json() as DatasetShard;
-    const row = shard.values.at(-1)!;
-    row[0] = null;
-    row[1] = 100;
-    row[2] = 102.2;
-    await route.fulfill({ json: shard });
-  });
+  const shard = JSON.parse(await readFile("public/data/shards/resale-all-mom.json", "utf8")) as DatasetShard;
+  const row = shard.values.at(-1)!;
+  row[0] = null;
+  row[1] = 100;
+  row[2] = 102.2;
+  await mockShards(page, [shard]);
   await page.reload();
   const missing = page.locator(".city-overview").getByRole("button", { name: "北京，缺失，查看走势", exact: true });
   const flat = page.locator(".city-overview").getByRole("button", { name: "上海，环比 0.0%，查看走势", exact: true });

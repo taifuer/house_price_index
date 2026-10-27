@@ -100,10 +100,8 @@ test("defaults to the latest published month", async ({ page }) => {
   const response = await page.request.get("/data/manifest.json");
   expect(response.ok()).toBe(true);
   const manifest = await response.json();
-  const [year, month] = manifest.periodRange[1].split("-");
-  await expect(page.locator(".section-title-meta").first()).toHaveText(
-    `二手住宅 · 环比 · ${year}年${Number(month)}月`,
-  );
+  await expect(page.locator(".section-title-meta").first()).toHaveText("二手住宅 · 环比");
+  await expect(page.getByRole("combobox", { name: "概览月份" })).toHaveValue(manifest.periodRange[1]);
   await expect(page.locator(".summary-item").first()).toContainText("70/70");
   await expect(page.locator(".chart-canvas svg")).toHaveCount(4);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
@@ -116,7 +114,8 @@ test("renders the July 2026 dashboard without horizontal overflow", async ({ pag
   await expect(page.locator(".summary-item").nth(0)).toContainText("70/70");
   await expect(page.locator(".summary-item").last()).toContainText(/\[-?\d+\.\d%, \+?\d+\.\d%\]/);
   await expect(page.locator(".section-title")).toHaveText("价格概览");
-  await expect(page.locator(".section-title-meta").first()).toHaveText("二手住宅 · 环比 · 2026年7月");
+  await expect(page.locator(".section-title-meta").first()).toHaveText("二手住宅 · 环比");
+  await expect(page.getByRole("combobox", { name: "概览月份" })).toHaveValue("2026-07");
   await expect(page.getByRole("button", { name: /下载.*CSV/ })).toHaveCount(0);
   await expect(page.locator(".chart-canvas")).toHaveCount(4);
   await expect(page.locator(".dashboard-section")).toHaveCount(1);
@@ -144,13 +143,8 @@ test("renders the July 2026 dashboard without horizontal overflow", async ({ pag
   expect(bodyContent).not.toBeNull();
   expect(Math.abs(headerContent!.x - bodyContent!.x)).toBeLessThanOrEqual(1);
   expect(Math.abs(headerContent!.x + headerContent!.width - bodyContent!.x - bodyContent!.width)).toBeLessThanOrEqual(1);
-  const sourceGap = await page.locator(".dashboard-section").evaluate((section) => {
-    const meta = section.querySelector(".section-title-meta")?.getBoundingClientRect();
-    const action = section.querySelector(".section-actions")?.getBoundingClientRect();
-    return meta && action ? Math.round(action.left - meta.right) : -1;
-  });
-  expect(sourceGap).toBeGreaterThanOrEqual(0);
-  expect(sourceGap).toBeLessThanOrEqual(4);
+  await expect(page.locator(".section-meta-row .source-link")).toHaveCount(0);
+  await expect(page.locator(".summary-context").getByRole("link", { name: "查看国家统计局原文" })).toBeVisible();
   await expect(page.locator(".city-matrix-cell")).toHaveCount(70);
   await page.screenshot({ path: `/tmp/house-v4-${testInfo.project.name}.png`, fullPage: true });
   if (testInfo.project.name === "desktop") {
@@ -262,6 +256,19 @@ test("updates filters without a document reload", async ({ page }) => {
   await expect(page.locator(".section-title-meta").first()).toContainText("新建商品住宅");
   await expect(page).toHaveURL(/view=new-all-mom/);
   expect(await page.evaluate(() => performance.getEntriesByType("navigation").length)).toBe(navigationCount);
+});
+
+test("keeps year-end partial ranges readable on narrow overall and tier charts", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.goto("/?section=history&view=resale-all-mom&range=3y");
+  const chart = page.locator(".overall-trend-chart");
+  for (const [range, firstYear] of [["近3年", "2023年"], ["近5年", "2021年"]]) {
+    await chart.getByRole("button", { name: range!, exact: true }).click();
+    for (const mode of ["总体", "分层"]) {
+      await chart.getByRole("button", { name: mode, exact: true }).click();
+      await expectMobileYearLabels(chart, firstYear!);
+    }
+  }
 });
 
 test("switches task sections and keeps chart controls available", async ({ page }, testInfo) => {
@@ -395,8 +402,7 @@ test("persists trend controls and scopes missing-data notes to the visible range
   if (missingMonths) await expect(overallTrend.locator(".trend-note")).toContainText(`* ${missingMonths} 个月份`);
   else await expect(overallTrend.locator(".trend-note")).toHaveCount(0);
 
-  await overallTrend.getByRole("button", { name: "广度", exact: true }).click();
-  await expect(overallTrend.getByText(/市场广度 =/)).toBeVisible();
+  await expect(overallTrend.getByRole("button", { name: "广度", exact: true })).toHaveCount(0);
   await overallTrend.getByRole("button", { name: "分层", exact: true }).click();
   await overallTrend.getByRole("button", { name: "近5年", exact: true }).click();
   await expect(overallTrend.locator(".trend-note")).toHaveCount(0);

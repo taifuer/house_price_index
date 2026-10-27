@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { formatPct } from "../src/lib/format";
 import type { DatasetShard, Manifest } from "../src/types";
+import { mockShards } from "./data-fixture";
 
 test.beforeEach(({ page }) => {
   page.on("pageerror", (error) => { throw error; });
@@ -62,7 +63,8 @@ test("shared controls update both charts and historical rows without changing na
   await expect(controls.getByLabel("结束月份")).toHaveValue("2026-07");
   await expect(controls.getByRole("combobox", { name: "城市历史住宅类型" })).toHaveValue("新建商品住宅");
   await page.getByRole("navigation").getByRole("link", { name: "月度概览" }).click();
-  await expect(page.locator(".section-title-meta")).toHaveText("二手住宅 · 同比 · 2026年7月");
+  await expect(page.locator(".section-title-meta")).toHaveText("二手住宅 · 同比");
+  await expect(page.getByRole("combobox", { name: "概览月份" })).toHaveValue("2026-07");
 });
 
 test("chart click or tap and table selection inspect one month without rebasing or jumping", async ({ page }, testInfo) => {
@@ -96,8 +98,8 @@ test("history distinguishes failed and missing data from flat-filled interval es
   const descriptor = manifest.datasets.find((dataset) => dataset.id === "resale-all-mom")!;
   const shard = await (await page.request.get(`/data/${descriptor.path}`)).json() as DatasetShard;
   shard.values[shard.periods.indexOf("2026-04")]![manifest.cities.findIndex((city) => city.name === "北京")] = null;
-  await page.route("**/data/shards/resale-all-mom.json", (route) => route.fulfill({ json: shard }));
-  await page.route("**/data/shards/resale-all-yoy.json", (route) => route.fulfill({ status: 503, body: "Unavailable" }));
+  await mockShards(page, [shard]);
+  await page.route("**/data/shards/resale-all-yoy.json*", (route) => route.fulfill({ status: 503, body: "Unavailable" }));
   await page.goto("/?section=cities&cityPeriod=2026-08&indexStart=2025-12&indexEnd=2026-08");
   const row = page.locator('.city-history-table tr[data-period="2026-04"]');
   await expect(row.getByRole("cell").nth(0)).toHaveText("—");

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import type { DatasetShard, Manifest } from "../src/types";
+import { mockShards } from "./data-fixture";
 
 async function localShard(id: string): Promise<DatasetShard> {
   return JSON.parse(await readFile(`public/data/shards/${id}.json`, "utf8")) as DatasetShard;
@@ -132,7 +133,7 @@ test("automatically fills gaps and lists every missing range with no mode contro
   }
   const endpoint = shard.periods.reduce((value, period, index) => period > "2025-12" && period <= "2026-08"
     ? value * (shard.values[index]![cityIndex] ?? 100) / 100 : value, 100);
-  await page.route("**/data/shards/resale-all-mom.json", (route) => route.fulfill({ json: shard }));
+  await mockShards(page, [shard]);
   await page.goto("/?section=cities&view=resale-all-mom&period=2026-08&indexStart=2025-12&indexEnd=2026-08");
   const view = page.locator(".interval-index-chart");
   const controls = page.locator(".city-history-controls");
@@ -197,7 +198,7 @@ test("fills absent calendar months and ignores obsolete strict-mode links", asyn
   shard.periods.splice(missingIndex, 1);
   shard.values.splice(missingIndex, 1);
   shard.sources.splice(missingIndex, 1);
-  await page.route("**/data/shards/resale-all-mom.json", (route) => route.fulfill({ json: shard }));
+  await mockShards(page, [shard]);
   await page.goto("/?section=cities&view=resale-all-mom&period=2026-08&indexStart=2021-08&indexEnd=2026-08&indexFill=strict");
   const view = page.locator(".interval-index-chart");
   const controls = page.locator(".city-history-controls");
@@ -218,7 +219,7 @@ test("fills absent calendar months and ignores obsolete strict-mode links", asyn
 });
 
 test("shows a load failure instead of using the selected YoY data", async ({ page }) => {
-  await page.route("**/data/shards/resale-all-mom.json", (route) => route.fulfill({ status: 503, body: "unavailable" }));
+  await page.route("**/data/shards/resale-all-mom.json*", (route) => route.fulfill({ status: 503, body: "unavailable" }));
   await page.goto("/?section=cities&view=resale-all-yoy&period=2026-08");
   const view = page.locator(".interval-index-chart");
   const controls = page.locator(".city-history-controls");
@@ -363,7 +364,7 @@ test("groups identical gaps by city and deduplicates segmented tooltip rows and 
     endpoints.set(city, shard.periods.reduce((value, period, index) => period > "2025-12" && period <= "2026-08"
       ? value * (shard.values[index]![cityIndex] ?? 100) / 100 : value, 100));
   }
-  await page.route("**/data/shards/resale-all-mom.json", (route) => route.fulfill({ json: shard }));
+  await mockShards(page, [shard]);
   await page.goto("/?section=cities&view=resale-all-mom&period=2026-08&indexCities=北京,上海,广州,深圳&indexStart=2025-12&indexEnd=2026-08");
   const view = page.locator(".interval-index-chart");
   const controls = page.locator(".city-history-controls");

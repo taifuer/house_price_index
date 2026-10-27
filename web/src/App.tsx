@@ -5,6 +5,7 @@ import { CitySearch } from "./components/CitySearch";
 import { FilterDrawer } from "./components/FilterDrawer";
 import type { FilterSelection } from "./components/FilterDrawer";
 import { ScrollJump } from "./components/ScrollJump";
+import { DataRetry } from "./components/DataRetry";
 import { datasetForSelection, loadManifest, loadShard } from "./lib/data";
 import { citySnapshotPeriods, dashboardSearch, readDashboardState, updateDashboardState, type DashboardState } from "./lib/dashboardState";
 import type { DashboardSection, DatasetShard, Manifest } from "./types";
@@ -31,6 +32,7 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
   const filterDescriptor = section === "cities" ? cityDescriptor : descriptor;
   const [loadedShard, setLoadedShard] = useState<LoadedShard | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [filterOpen, setFilterOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [focusCityRequest, setFocusCityRequest] = useState(0);
@@ -43,7 +45,7 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
     if (section === "cities") return;
     let active = true;
     setLoadError(null);
-    loadShard(descriptor)
+    loadShard(descriptor, manifest)
       .then((data) => {
         if (active) setLoadedShard({ id: descriptor.id, data });
       })
@@ -53,7 +55,7 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
     return () => {
       active = false;
     };
-  }, [descriptor, section]);
+  }, [descriptor, section, manifest, attempt]);
 
   useEffect(() => {
     window.history.replaceState(null, "", `${window.location.pathname}${dashboardSearch(manifest, state, window.location.search)}${window.location.hash}`);
@@ -209,7 +211,7 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
               focusRequest={focusCityRequest} />
           </Suspense>
         ) : <>
-          {loadError && <div className="data-error" role="alert">{loadError}</div>}
+          {loadError && <DataRetry message={loadError} onRetry={() => setAttempt((value) => value + 1)} />}
           {!shard && !loadError && <div className="content-loader"><span /><span /><span /></div>}
           {shard && (
           <Suspense fallback={<div className="content-loader"><span /><span /><span /></div>}>
@@ -218,6 +220,7 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
               descriptor={descriptor}
               shard={shard}
               period={period}
+              onPeriodChange={(period) => updateState({ period })}
               section={section}
               onViewCity={(city) => openCity(city, { cityDatasetId: descriptor.id, cityPeriod: period })}
               overviewTier={state.overviewTier}
@@ -255,14 +258,18 @@ function Dashboard({ manifest }: { manifest: Manifest }) {
 export default function App() {
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    let active = true;
+    setError(null);
     loadManifest()
-      .then(setManifest)
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "页面数据加载失败"));
-  }, []);
+      .then((value) => { if (active) setManifest(value); })
+      .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : "页面数据加载失败"); });
+    return () => { active = false; };
+  }, [attempt]);
 
-  if (error) return <div className="fatal-error" role="alert">{error}</div>;
+  if (error) return <DataRetry className="fatal-error" message={error} onRetry={() => setAttempt((value) => value + 1)} />;
   if (!manifest) return <div className="initial-loader" aria-label="页面加载中"><span /><span /><span /></div>;
   return <Dashboard manifest={manifest} />;
 }

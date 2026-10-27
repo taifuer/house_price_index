@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { datasetForSelection } from "../lib/data";
-import type { DashboardState } from "../lib/dashboardState";
+import { citySnapshotPeriods, type DashboardState } from "../lib/dashboardState";
 import { formatMetric, formatSizeBand } from "../lib/format";
 import { reconcileCityColors } from "../lib/cityColors";
 import { useCityData } from "../hooks/useCityData";
@@ -10,6 +10,7 @@ import { CitySnapshot } from "./CitySnapshot";
 import { CityHistoryControls } from "./CityHistoryControls";
 import { CityHistoryTable } from "./CityHistoryTable";
 import { FilterSelect } from "./FilterSelect";
+import { MonthSelect } from "./MonthSelect";
 import { CityTrendChart } from "./charts/TrendCharts";
 import { IntervalIndexChart } from "./charts/IntervalIndexChart";
 
@@ -27,6 +28,7 @@ export default function CityContent({ manifest, state, onChange, onOpenSearch, f
   const data = useCityData(manifest, descriptor.sizeBand);
   const shard = data.loaded[descriptor.id];
   const city = manifest.cities.find((item) => item.name === state.city)!;
+  const periods = useMemo(() => citySnapshotPeriods(manifest, descriptor.sizeBand), [manifest, descriptor.sizeBand]);
   const selection = state.intervalSelection;
   const [assignments, setAssignments] = useState(() => reconcileCityColors(selection.cities, new Map()));
   const colors = useMemo(() => reconcileCityColors(selection.cities, assignments), [selection.cities, assignments]);
@@ -43,19 +45,21 @@ export default function CityContent({ manifest, state, onChange, onOpenSearch, f
     if (target) onChange({ cityDatasetId: target.id });
   };
   const onPeriodChange = (cityPeriod: string) => onChange({ cityPeriod });
-  const metricControl = <FilterSelect aria-label="走势指标" value={descriptor.metric} onChange={(event) => updateSeries(descriptor.houseType, event.target.value)}>
+  const metricControl = <FilterSelect variant="compact" aria-label="走势指标" value={descriptor.metric} onChange={(event) => updateSeries(descriptor.houseType, event.target.value)}>
     {manifest.dimensions.metrics.map((metric) => <option key={metric} value={metric}>{formatMetric(metric)}</option>)}
   </FilterSelect>;
 
   return <section ref={pageRef} className="dashboard-section city-data-page city-trend-anchor" data-section="cities" tabIndex={-1} aria-labelledby="city-page-title">
     <div className="section-heading city-page-heading">
       <h2 id="city-page-title"><button type="button" className="city-page-title" onClick={onOpenSearch} title="切换城市" aria-label={`切换城市，当前${city.name}`}>{city.name}<ChevronDown size={17} /></button></h2>
-      <span className="city-page-tier">{city.tier}</span>
-      <span className="section-title-meta">{descriptor.sizeBand === "全部" ? "全部面积" : formatSizeBand(descriptor.sizeBand)}</span>
+      <div className="section-meta-row">
+        <span className="section-title-meta">{city.tier} · {descriptor.sizeBand === "全部" ? "全部面积" : formatSizeBand(descriptor.sizeBand)}</span>
+        <MonthSelect periods={periods} value={state.cityPeriod} onChange={onPeriodChange} label="当月表现月份" />
+      </div>
     </div>
     <div className="section-content">
-      <CitySnapshot manifest={manifest} city={city.name} period={state.cityPeriod} sizeBand={descriptor.sizeBand} {...data}
-        onPeriodChange={onPeriodChange} onViewSeries={(cityDatasetId) => onChange({ cityDatasetId })} />
+      <CitySnapshot manifest={manifest} city={city.name} period={state.cityPeriod} {...data}
+        onViewSeries={(cityDatasetId) => onChange({ cityDatasetId })} />
       <CityHistoryControls manifest={manifest} descriptor={mom} primaryCity={city.name} selection={selection} colors={colors}
         onHouseChange={(house) => updateSeries(house, descriptor.metric)} onChange={(intervalSelection) => onChange({ intervalSelection })} />
       <div className="city-series-anchor">

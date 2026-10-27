@@ -11,6 +11,7 @@ import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { COLORS, axisLabelStyle, splitLineStyle, symmetricScale } from "../../lib/chartTheme";
 import { HEATMAP_PALETTE, heatmapColor, heatmapHeight, heatmapLegendLabels, heatmapLimit } from "../../lib/cityHeatmap";
 import { loadShard } from "../../lib/data";
+import { DataRetry } from "../DataRetry";
 import { completeMonths, formatMetric, formatPct, formatPeriod, formatSizeBand, roundOne } from "../../lib/format";
 import type { CityTier, DatasetDescriptor, DatasetShard, Manifest, TierFilter, TrendRange } from "../../types";
 
@@ -403,6 +404,7 @@ export function MonthlyComparisonView(props: CityViewProps) {
   const { manifest, descriptor, shard, period, filePrefix } = props;
   const [paired, setPaired] = useState<{ key: string; mom: DatasetShard; yoy: DatasetShard } | null>(null);
   const [pairError, setPairError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const momDescriptor = manifest.datasets.find((item) => (
     item.houseType === descriptor.houseType && item.sizeBand === descriptor.sizeBand && item.metric === "环比"
   ));
@@ -416,8 +418,8 @@ export function MonthlyComparisonView(props: CityViewProps) {
     let active = true;
     setPairError(null);
     Promise.all([
-      momDescriptor.id === descriptor.id ? Promise.resolve(shard) : loadShard(momDescriptor),
-      yoyDescriptor.id === descriptor.id ? Promise.resolve(shard) : loadShard(yoyDescriptor),
+      momDescriptor.id === descriptor.id ? Promise.resolve(shard) : loadShard(momDescriptor, manifest),
+      yoyDescriptor.id === descriptor.id ? Promise.resolve(shard) : loadShard(yoyDescriptor, manifest),
     ]).then(([mom, yoy]) => {
       if (active) setPaired({ key: pairKey, mom, yoy });
     }).catch((error: unknown) => {
@@ -426,14 +428,14 @@ export function MonthlyComparisonView(props: CityViewProps) {
     return () => {
       active = false;
     };
-  }, [descriptor.id, momDescriptor, pairKey, shard, yoyDescriptor]);
+  }, [descriptor.id, momDescriptor, pairKey, shard, yoyDescriptor, manifest, attempt]);
 
   return (
     <div className="monthly-comparison-view">
       {!momDescriptor || !yoyDescriptor
         ? <div className="data-error" role="alert">当前住宅类型和面积段缺少环比或同比数据。</div>
         : pairError
-          ? <div className="data-error" role="alert">{pairError}</div>
+          ? <DataRetry message={pairError} onRetry={() => setAttempt((value) => value + 1)} />
           : paired?.key === pairKey
             ? <MomentumQuadrantChart
                 manifest={manifest}

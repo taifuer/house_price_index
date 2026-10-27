@@ -52,14 +52,16 @@ test("dropdowns use consistent typography with one shared historical toolbar", a
   await expect(page.locator(".city-trend-chart .chart-canvas svg")).toBeVisible();
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
-    const styles = await page.locator(".app-main .filter-select select").evaluateAll((selects) => selects.map((select) => {
+    const styles = await page.locator(".app-main .filter-select-field select").evaluateAll((selects) => selects.map((select) => {
       const style = getComputedStyle(select);
       return [style.fontSize, style.fontWeight, style.lineHeight, style.height, style.borderRadius, style.padding];
     }));
-    expect(styles).toHaveLength(5);
+    expect(styles).toHaveLength(3);
     for (const style of styles) expect(style).toEqual(styles[0]);
     expect(styles[0]!.slice(0, 2)).toEqual(["13px", "400"]);
-    expect(styles[0]![3]).toBe("40px");
+    expect(styles[0]![3]).toBe("44px");
+    await expect(page.locator(".month-select select")).toHaveCSS("height", "40px");
+    await expect(page.locator(".filter-select-compact select")).toHaveCSS("height", "40px");
     for (const label of await page.locator(".city-history-filters label > span:first-child").all()) {
       await expect(label).toHaveCSS("font-size", "13px");
       await expect(label).toHaveCSS("line-height", "20px");
@@ -76,7 +78,7 @@ test("dropdowns use consistent typography with one shared historical toolbar", a
     await page.locator(".filter-toggle").click();
     const area = page.locator(".filter-list select");
     await expect(area).toHaveCSS("font-size", "13px");
-    await expect(area).toHaveCSS("height", "40px");
+    await expect(area).toHaveCSS("height", "44px");
     await page.getByRole("button", { name: "完成", exact: true }).click();
     await expect(page.locator(".filter-drawer")).toBeHidden();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
@@ -86,7 +88,7 @@ test("dropdowns use consistent typography with one shared historical toolbar", a
   }
 });
 
-test("all task views share the same control height at narrow and desktop widths", async ({ page }) => {
+test("all task views share compact and field control sizes at narrow and desktop widths", async ({ page }) => {
   await page.goto("/");
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
@@ -96,9 +98,10 @@ test("all task views share the same control height at narrow and desktop widths"
       const controls = await page.locator(".app-main .segmented, .app-main .filter-select select").evaluateAll((elements) => elements.map((element) => ({
         height: element.getBoundingClientRect().height,
         overflow: element.scrollWidth - element.clientWidth,
+        field: element.parentElement?.classList.contains("filter-select-field"),
       })));
       for (const control of controls) {
-        expect(control.height).toBe(40);
+        expect(control.height).toBe(control.field ? 44 : 40);
         expect(control.overflow).toBeLessThanOrEqual(1);
       }
       const clippedLabels = await page.locator(".app-main .segmented button").evaluateAll((buttons) => buttons.filter((button) =>

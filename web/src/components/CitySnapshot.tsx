@@ -1,23 +1,20 @@
-import { useMemo } from "react";
-import { ExternalLink } from "lucide-react";
-import { citySnapshotPeriods } from "../lib/dashboardState";
-import { formatMetric, formatPct, formatPeriod } from "../lib/format";
-import { FilterSelect } from "./FilterSelect";
+import { formatMetric, formatPct } from "../lib/format";
+import { DataRetry } from "./DataRetry";
 import type { DatasetDescriptor, DatasetShard, Manifest } from "../types";
 
 interface CitySnapshotProps {
   manifest: Manifest;
   city: string;
   period: string;
-  sizeBand: string;
   descriptors: DatasetDescriptor[];
   loaded: Record<string, DatasetShard>;
   failures: string[];
-  onPeriodChange: (period: string) => void;
+  checking: boolean;
+  retry: () => void;
   onViewSeries: (datasetId: string) => void;
 }
 
-export function CitySnapshot({ manifest, city, period, sizeBand, descriptors, loaded, failures, onViewSeries, onPeriodChange }: CitySnapshotProps) {
+export function CitySnapshot({ manifest, city, period, descriptors, loaded, failures, checking, retry, onViewSeries }: CitySnapshotProps) {
   const cityIndex = manifest.cities.findIndex((item) => item.name === city);
   const sources = [...new Set(descriptors.flatMap((descriptor) => {
     const shard = loaded[descriptor.id];
@@ -25,7 +22,6 @@ export function CitySnapshot({ manifest, city, period, sizeBand, descriptors, lo
     return source ? [source.url] : [];
   }))];
   const loading = descriptors.some((descriptor) => !loaded[descriptor.id] && !failures.includes(descriptor.id));
-  const periods = useMemo(() => citySnapshotPeriods(manifest, sizeBand), [manifest, sizeBand]);
   const missing = descriptors.some((descriptor) => {
     const shard = loaded[descriptor.id];
     return shard && shard.values[shard.periods.indexOf(period)]?.[cityIndex] == null;
@@ -35,18 +31,11 @@ export function CitySnapshot({ manifest, city, period, sizeBand, descriptors, lo
     <div className="city-snapshot chart-block" aria-busy={loading}>
       <div className="chart-heading-row">
         <h3>当月表现</h3>
-        <div className="snapshot-sources">
-          <FilterSelect aria-label="当月表现月份" value={period} onChange={(event) => onPeriodChange(event.target.value)}>
-            {[...periods].reverse().map((month) => <option key={month} value={month}>{formatPeriod(month)}</option>)}
-          </FilterSelect>
-          <div className="snapshot-source-links">
-            {sources.map((url) => <a key={url} className="source-link" href={url} target="_blank" rel="noreferrer"
-              aria-label="查看国家统计局原文" title="查看国家统计局原文"><ExternalLink size={16} /></a>)}
-          </div>
-        </div>
       </div>
       <table className="city-snapshot-table" aria-label={`${city}当月住宅价格变化`}>
-        <thead><tr><th scope="col">住宅类型</th>{manifest.dimensions.metrics.map((metric) => <th key={metric} scope="col">{formatMetric(metric)}</th>)}</tr></thead>
+        <thead><tr><th scope="col">住宅类型</th>{manifest.dimensions.metrics.map((metric) => <th key={metric} scope="col">
+          {metric === "累计平均" ? <><span>累计平均</span><wbr /><span>同比</span></> : formatMetric(metric)}
+        </th>)}</tr></thead>
         <tbody>{manifest.dimensions.houseTypes.map((houseType) => (
           <tr key={houseType}>
             <th scope="row">{houseType}</th>
@@ -69,7 +58,9 @@ export function CitySnapshot({ manifest, city, period, sizeBand, descriptors, lo
         ))}</tbody>
       </table>
       {missing && <p className="trend-note">— 表示该月该指标无数据，不计作持平。</p>}
-      {failures.length > 0 && <p className="trend-note" role="alert">部分指标加载失败，已保留其他可用数据。</p>}
+      {sources.length > 0 && <p className="snapshot-source-note">数据来源：{sources.map((url, index) => <a key={url} className="source-text-link" href={url} target="_blank" rel="noreferrer"
+        aria-label="查看国家统计局原文">统计局原文{sources.length > 1 ? ` ${index + 1}` : ""}</a>)}</p>}
+      {failures.length > 0 && <DataRetry message="部分指标加载失败，已保留其他可用数据。" onRetry={retry} busy={checking} />}
     </div>
   );
 }

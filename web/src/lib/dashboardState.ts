@@ -56,7 +56,7 @@ export function readDashboardState(manifest: Manifest, search: string): Dashboar
     city,
     cityDatasetId: cityDescriptor.id,
     cityPeriod: cityPeriod && cityPeriods.includes(cityPeriod) ? cityPeriod : cityPeriods.at(-1)!,
-    trendMode: trend === "tier" || trend === "breadth" ? trend : "overall",
+    trendMode: trend === "tier" ? "tier" : "overall",
     overallRange: range("range", "10y"),
     heatmapRange: range("heatmapRange", "3y"),
     heatmapTier: tier("heatmapTier"),

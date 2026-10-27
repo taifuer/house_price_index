@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo } from "react";
-import { ExternalLink } from "lucide-react";
+import { MonthSelect } from "./MonthSelect";
 
 import { cityDataForPeriod } from "../lib/data";
 import { formatMetric, formatPeriod, formatSizeBand } from "../lib/format";
@@ -25,6 +25,7 @@ interface DashboardContentProps {
   descriptor: DatasetDescriptor;
   shard: DatasetShard;
   period: string;
+  onPeriodChange: (period: string) => void;
   section: DashboardSection;
   onViewCity: (city: string) => void;
   overviewTier: TierFilter;
@@ -44,6 +45,7 @@ export default function DashboardContent({
   descriptor,
   shard,
   period,
+  onPeriodChange,
   section,
   onViewCity,
   overviewTier,
@@ -77,27 +79,14 @@ export default function DashboardContent({
       <div className="section-heading">
         <h2 id="dashboard-section-title" className="section-title">{title}</h2>
         <div className="section-meta-row">
-          <span className="section-title-meta">{section === "overview" ? overviewMeta : trendMeta}</span>
-          {section === "overview" && source && (
-            <div className="section-actions section-action-group">
-              <a
-                className="source-link"
-                href={source.url}
-                target="_blank"
-                rel="noreferrer"
-                title="查看国家统计局原文"
-                aria-label="查看国家统计局原文"
-              >
-                <ExternalLink size={17} />
-              </a>
-            </div>
-          )}
+          <span className="section-title-meta">{trendMeta}</span>
+          {section === "overview" && <MonthSelect periods={descriptor.periods} value={period} onChange={onPeriodChange} label="概览月份" />}
         </div>
       </div>
       <div className="section-content">
         {section === "overview" && (
           <>
-            <SummaryGrid data={cityData} manifest={manifest} />
+            <SummaryGrid data={cityData} manifest={manifest} sourceUrl={source?.url} />
             <CityOverview
               filePrefix={filePrefix}
               subtitle={overviewMeta}

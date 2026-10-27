@@ -9,30 +9,90 @@ import type {
   TierTrendDatum,
 } from "../types";
 import { completeMonths, roundOne } from "./format";
+import { validateManifest, validateShard } from "./dataValidation";
 
 const shardCache = new Map<string, Promise<DatasetShard>>();
 let manifestRequest: Promise<Manifest> | undefined;
+const MAX_RESPONSE_BYTES = 1024 * 1024;
+export const SHARD_CONCURRENCY = 3;
+let activeRequests = 0;
+const pendingRequests: Array<() => void> = [];
+
+function limitShardRequest<T>(load: () => Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const start = () => {
+      activeRequests++;
+      void load().then(resolve, reject).finally(() => {
+        activeRequests--;
+        pendingRequests.shift()?.();
+      });
+    };
+    if (activeRequests < SHARD_CONCURRENCY) start();
+    else pendingRequests.push(start);
+  });
+}
 
 function assetUrl(path: string): string {
   return new URL(path.replace(/^\//, ""), document.baseURI).toString();
 }
 
-async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(assetUrl(path));
-  if (!response.ok) throw new Error(`数据请求失败：${response.status} ${path}`);
-  return (await response.json()) as T;
+async function readJson(response: Response): Promise<unknown> {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const text = await response.text();
+    if (new TextEncoder().encode(text).length > MAX_RESPONSE_BYTES) throw new Error("数据响应超过大小限制。");
+    return JSON.parse(text) as unknown;
+  }
+  const decoder = new TextDecoder();
+  let size = 0, text = "";
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_RESPONSE_BYTES) {
+        await reader.cancel();
+        throw new Error("数据响应超过大小限制。");
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    return JSON.parse(text + decoder.decode()) as unknown;
+  } finally { reader.releaseLock(); }
+}
+
+async function fetchJson(path: string): Promise<unknown> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12_000);
+  try {
+    const response = await fetch(assetUrl(path), { signal: controller.signal, cache: "no-cache" });
+    if (response.status !== 200) throw new Error(`数据请求失败（${response.status}），请稍后重试。`);
+    if (!/^application\/(?:[a-z0-9.+-]+\+)?json(?:\s*;|$)/i.test(response.headers.get("content-type") ?? "")) throw new Error("数据响应格式异常，请重试。");
+    return await readJson(response);
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error("数据请求超时，请重试。");
+    throw error;
+  } finally { clearTimeout(timeout); }
 }
 
 export function loadManifest(): Promise<Manifest> {
-  manifestRequest ??= fetchJson<Manifest>("data/manifest.json");
+  manifestRequest ??= fetchJson("data/manifest.json").then(validateManifest).catch((error: unknown) => {
+    manifestRequest = undefined;
+    throw error;
+  });
   return manifestRequest;
 }
 
-export function loadShard(descriptor: DatasetDescriptor): Promise<DatasetShard> {
-  const cached = shardCache.get(descriptor.id);
+export function loadShard(descriptor: DatasetDescriptor, manifest: Manifest): Promise<DatasetShard> {
+  const key = `${manifest.generatedAt}:${descriptor.id}`;
+  const cached = shardCache.get(key);
   if (cached) return cached;
-  const request = fetchJson<DatasetShard>(`data/${descriptor.path}`);
-  shardCache.set(descriptor.id, request);
+  const request = limitShardRequest(() => fetchJson(`data/${descriptor.path}?v=${encodeURIComponent(manifest.generatedAt)}`)
+    .then((value) => validateShard(value, descriptor, manifest.cities.length)))
+    .catch((error: unknown) => {
+      shardCache.delete(key);
+      throw error;
+    });
+  shardCache.set(key, request);
   return request;
 }
 
@@ -111,10 +171,6 @@ export function buildTierTrend(manifest: Manifest, shard: DatasetShard): TierTre
       };
     });
   });
-}
-
-export function marketBreadth(item: Pick<OverallTrendDatum, "up" | "down" | "covered">): number | null {
-  return item.covered ? roundOne(((item.up - item.down) / item.covered) * 100) : null;
 }
 
 export function buildFrequencyDistribution(values: number[]): FrequencyDatum[] {

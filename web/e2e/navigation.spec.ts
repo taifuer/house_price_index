@@ -46,7 +46,7 @@ test("task navigation retains filters, supports history and mounts only the acti
   await expect(page.locator(".city-history-controls").getByRole("button", { name: "近3年", exact: true })).toHaveAttribute("aria-pressed", "true");
   await nav.getByRole("link", { name: "月度概览" }).click();
   await expect(page.locator(".city-matrix-cell")).toHaveCount(31);
-  await expect(page.locator(".section-title-meta")).toContainText("2026年7月");
+  await expect(page.getByRole("combobox", { name: "概览月份" })).toHaveValue("2026-07");
   expect(documentRequests).toBe(1);
   expect(shardRequests).toBe(1);
   expect(errors).toEqual([]);

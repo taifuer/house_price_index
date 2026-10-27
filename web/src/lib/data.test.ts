@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { DatasetShard, Manifest } from "../types";
-import { buildFrequencyDistribution, buildOverallTrend, cityDataForPeriod, marketBreadth } from "./data";
+import { buildFrequencyDistribution, buildOverallTrend, cityDataForPeriod } from "./data";
 import { completeMonths, formatMetric, formatPct, metricAxisName, periodsForRange, summarizePeriodRanges } from "./format";
 
 const manifest = {
@@ -43,11 +43,6 @@ describe("data transforms", () => {
     const values = cityDataForPeriod(manifest, tied, "2026-01");
     expect(values.map((item) => item.rank)).toEqual([1, 1, 3]);
     expect(values.map((item) => item.city)).toEqual(["北京", "上海", "天津"]);
-  });
-
-  it("derives market breadth from covered cities", () => {
-    expect(marketBreadth({ up: 40, down: 20, covered: 70 })).toBe(28.6);
-    expect(marketBreadth({ up: 0, down: 0, covered: 0 })).toBeNull();
   });
 
   it("counts each published tenth-point value without merging endpoints", () => {

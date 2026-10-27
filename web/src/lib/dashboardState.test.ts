@@ -13,6 +13,11 @@ const manifest = {
 } as Manifest;
 
 describe("dashboard URL state", () => {
+  it("migrates removed breadth links to overall without losing other filters", () => {
+    const state = readDashboardState(manifest, "?section=history&trend=breadth&view=resale-all-yoy&range=5y&heatmapTier=二线");
+    expect(state).toMatchObject({ section: "history", trendMode: "overall", datasetId: "resale-all-yoy", overallRange: "5y", heatmapTier: "二线" });
+    expect(dashboardSearch(manifest, state, "?trend=breadth")).not.toContain("trend=");
+  });
   it("opens old monthly links in overview and keeps the dataset view parameter unchanged", () => {
     const state = readDashboardState(manifest, "?view=resale-all-yoy&period=2026-07");
     expect(state).toMatchObject({ section: "overview", datasetId: "resale-all-yoy", period: "2026-07", heatmapRange: "3y" });

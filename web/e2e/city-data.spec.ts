@@ -45,7 +45,8 @@ test("search opens a single-city panorama and keeps all six observations faithfu
   await expect(page.locator(".interval-meta").first()).toContainText("新建商品住宅");
   await expect(page.locator(".city-snapshot-table button")).toHaveCount(6);
   await page.getByRole("navigation").getByRole("link", { name: "月度概览" }).click();
-  await expect(page.locator(".section-title-meta")).toHaveText("二手住宅 · 同比 · 2026年7月");
+  await expect(page.locator(".section-title-meta")).toHaveText("二手住宅 · 同比");
+  await expect(page.getByRole("combobox", { name: "概览月份" })).toHaveValue("2026-07");
   await expect(page.locator(".city-matrix-cell")).toHaveCount(70);
   await page.getByRole("navigation").getByRole("link", { name: "城市看板" }).click();
   await page.reload();
@@ -75,7 +76,8 @@ test("city area and snapshot month filters do not alter national or chart time r
   await page.getByRole("combobox", { name: "城市历史住宅类型" }).selectOption("新建商品住宅");
   await expect(page.getByRole("combobox", { name: "城市历史住宅类型" })).toHaveValue("新建商品住宅");
   await page.getByRole("navigation").getByRole("link", { name: "月度概览" }).click();
-  await expect(page.locator(".section-title-meta")).toHaveText("二手住宅 · 环比 · 2026年7月");
+  await expect(page.locator(".section-title-meta")).toHaveText("二手住宅 · 环比");
+  await expect(page.getByRole("combobox", { name: "概览月份" })).toHaveValue("2026-07");
   await page.getByRole("navigation").getByRole("link", { name: "城市看板" }).click();
   await page.reload();
   await expect(page.locator(".section-title-meta")).toContainText("90m²及以下");
@@ -84,7 +86,7 @@ test("city area and snapshot month filters do not alter national or chart time r
 });
 
 test("partial request failures do not blank other city observations", async ({ page }) => {
-  await page.route("**/data/shards/new-all-yoy.json", (route) => route.fulfill({ status: 503, body: "Unavailable" }));
+  await page.route("**/data/shards/new-all-yoy.json*", (route) => route.fulfill({ status: 503, body: "Unavailable" }));
   await page.goto("/?section=cities&city=北京&view=resale-all-mom");
   const table = page.locator(".city-snapshot-table");
   await expect(table.getByText("加载失败", { exact: true })).toHaveCount(1);
@@ -99,7 +101,7 @@ test("city drilldown carries monthly context and search visits support browser b
   await expect(page.locator(".city-page-title")).toHaveText("北京");
   await expect(page.getByRole("combobox", { name: "当月表现月份" })).toHaveValue("2026-07");
   await expect(page.getByRole("combobox", { name: "城市历史住宅类型" })).toHaveValue("新建商品住宅");
-  await expect(page.locator(".section-title-meta")).toHaveText("90m²及以下");
+  await expect(page.locator(".section-title-meta")).toHaveText("一线 · 90m²及以下");
   await page.locator(".search-toggle").click();
   const search = page.getByRole("dialog", { name: "搜索城市" }).getByRole("searchbox");
   await search.fill("杭州");
@@ -111,7 +113,8 @@ test("city drilldown carries monthly context and search visits support browser b
   await expect(page.locator(".city-page-title")).toHaveText("北京");
   await expect(page.getByRole("combobox", { name: "当月表现月份" })).toHaveValue("2026-07");
   await page.goBack();
-  await expect(page.locator(".section-title-meta")).toHaveText("新建商品住宅 · 90m²及以下 · 环比 · 2026年7月");
+  await expect(page.locator(".section-title-meta")).toHaveText("新建商品住宅 · 90m²及以下 · 环比");
+  await expect(page.getByRole("combobox", { name: "概览月份" })).toHaveValue("2026-07");
 });
 
 test("city controls fit narrow screens and header tools sit to the right of navigation on desktop", async ({ page }, testInfo) => {
@@ -130,7 +133,8 @@ test("city controls fit narrow screens and header tools sit to the right of navi
     expect(overflows).toEqual([]);
     const title = (await page.locator(".city-page-title").boundingBox())!;
     const context = (await page.locator(".city-page-heading .section-title-meta").boundingBox())!;
-    expect(title.x + title.width).toBeLessThanOrEqual(context.x);
+    if (width >= 768) expect(title.x + title.width).toBeLessThanOrEqual(context.x);
+    else expect(context.y).toBeGreaterThanOrEqual(title.y + title.height);
     if (width >= 768) {
       const nav = (await page.getByRole("navigation").boundingBox())!;
       const tools = (await page.locator(".header-tools").boundingBox())!;
